@@ -8,7 +8,7 @@
 
 ### Overview
 
-CodeAgent Hub is a full-stack application for interacting with Claude Agent SDK and Codex CLI. It provides a cross-platform Flutter frontend and dual backend implementations (Python/TypeScript) with streaming chat capabilities.
+CodeAgent Hub is a full-stack application for interacting with Claude Agent SDK and Codex CLI. It provides a cross-platform Flutter frontend and a TypeScript Express backend with streaming chat capabilities.
 
 ### Features
 
@@ -23,13 +23,8 @@ CodeAgent Hub is a full-stack application for interacting with Claude Agent SDK 
 
 ```
 CodeAgentHub/
-├── config.yaml              # Shared backend configuration
+├── config.yaml              # Backend configuration
 ├── backend/
-│   ├── py_backend/          # Python FastAPI backend
-│   │   ├── main.py          # Entry point
-│   │   ├── app_factory.py   # FastAPI app & routes
-│   │   ├── config.py        # Configuration loading
-│   │   └── requirements.txt # Python dependencies
 │   └── ts_backend/          # TypeScript Express backend
 │       ├── src/
 │       │   ├── index.ts     # Entry point
@@ -47,8 +42,7 @@ CodeAgentHub/
 
 ### Prerequisites
 
-- **Python Backend**: Python 3.10+, pip
-- **TypeScript Backend**: Node.js 18+, npm
+- **Backend**: Node.js 18+, npm
 - **Frontend**: Flutter 3.5+, Dart SDK
 
 ### Quick Start
@@ -66,16 +60,8 @@ users:
 verbose_logs: true
 ```
 
-#### 2. Run Backend (Choose One)
+#### 2. Run Backend
 
-**Python Backend:**
-```bash
-cd backend/py_backend
-pip install -r requirements.txt
-python main.py
-```
-
-**TypeScript Backend:**
 ```bash
 cd backend/ts_backend
 npm install
@@ -102,7 +88,7 @@ flutter run -d windows  # or macos, linux, chrome, etc.
 | GET | `/sessions/{id}` | Get session details |
 | POST | `/sessions/load` | Reload sessions from disk |
 | GET/PUT | `/users/{id}/settings` | User settings |
-| POST | `/codex/chat` | Codex CLI chat (TS only) |
+| POST | `/codex/chat` | Codex CLI chat |
 
 ### License
 
@@ -114,7 +100,7 @@ MIT License
 
 ### 概述
 
-CodeAgent Hub 是一个用于与 Claude Agent SDK 和 Codex CLI 交互的全栈应用。提供跨平台 Flutter 前端和双后端实现（Python/TypeScript），支持流式聊天功能。
+CodeAgent Hub 是一个用于与 Claude Agent SDK 和 Codex CLI 交互的全栈应用。提供跨平台 Flutter 前端和 TypeScript Express 后端，支持流式聊天功能。
 
 ### 功能特性
 
@@ -129,13 +115,8 @@ CodeAgent Hub 是一个用于与 Claude Agent SDK 和 Codex CLI 交互的全栈�
 
 ```
 CodeAgentHub/
-├── config.yaml              # 共享后端配置
+├── config.yaml              # 后端配置
 ├── backend/
-│   ├── py_backend/          # Python FastAPI 后端
-│   │   ├── main.py          # 入口文件
-│   │   ├── app_factory.py   # FastAPI 应用和路由
-│   │   ├── config.py        # 配置加载
-│   │   └── requirements.txt # Python 依赖
 │   └── ts_backend/          # TypeScript Express 后端
 │       ├── src/
 │       │   ├── index.ts     # 入口文件
@@ -153,8 +134,7 @@ CodeAgentHub/
 
 ### 环境要求
 
-- **Python 后端**: Python 3.10+, pip
-- **TypeScript 后端**: Node.js 18+, npm
+- **后端**: Node.js 18+, npm
 - **前端**: Flutter 3.5+, Dart SDK
 
 ### 快速开始
@@ -172,16 +152,8 @@ users:
 verbose_logs: true
 ```
 
-#### 2. 运行后端（二选一）
+#### 2. 运行后端
 
-**Python 后端：**
-```bash
-cd backend/py_backend
-pip install -r requirements.txt
-python main.py
-```
-
-**TypeScript 后端：**
 ```bash
 cd backend/ts_backend
 npm install
@@ -208,7 +180,7 @@ flutter run -d windows  # 或 macos, linux, chrome 等
 | GET | `/sessions/{id}` | 获取会话详情 |
 | POST | `/sessions/load` | 从磁盘重新加载会话 |
 | GET/PUT | `/users/{id}/settings` | 用户设置 |
-| POST | `/codex/chat` | Codex CLI 聊天（仅 TS 后端） |
+| POST | `/codex/chat` | Codex CLI 聊天 |
 
 ### 开源协议
 

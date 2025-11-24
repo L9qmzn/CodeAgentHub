@@ -5,7 +5,8 @@
       "Bash(cp:*)",
       "Bash(cat:*)",
       "Bash(tree /F \"C:\\Users\\11988\\PycharmProjects\\CodeAgentHub\")",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
