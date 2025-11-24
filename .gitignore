@@ -1,0 +1,58 @@
+# Database
+*.db
+sessions.db
+
+# Environment & Config
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+backend/ts_backend/dist/
+
+# Flutter
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/build/
+frontend/*.iml
+frontend/.metadata
+frontend/pubspec.lock
+
+# Platform-specific builds
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/app/build/
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/macos/Flutter/ephemeral/
+frontend/linux/flutter/ephemeral/
+frontend/windows/flutter/ephemeral/
+
+# Miscellaneous
+*.log
+.DS_Store
+Thumbs.db
+%USERPROFILE%/

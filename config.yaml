@@ -1,0 +1,7 @@
+# CodeAgentHub Backend Configuration
+claude_dir: # Leave empty for default (~/.claude)
+sessions_db: ./sessions.db
+port: 8207
+users:
+  admin: 642531
+verbose_logs: true # set to false to disable detailed streaming logs
