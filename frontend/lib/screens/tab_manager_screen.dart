@@ -1610,18 +1610,13 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     );
   }
 
-  /// 用独立的 Navigator 包裹标签页内容
-  /// 这样页面跳转（如打开设置）只会在当前标签页/面板内进行，不会覆盖整个屏幕
+  /// 返回标签页内容
+  /// 注意：之前尝试用 Navigator 包裹以实现分屏内导航，但会导致无限重建问题
+  /// 目前直接返回 content，设置页面会覆盖整个屏幕而非仅在分屏内
   Widget _wrapWithNavigator(TabInfo tab) {
-    return Navigator(
-      key: ValueKey('nav_${tab.id}'),
-      onGenerateRoute: (settings) {
-        return MaterialPageRoute(
-          builder: (context) => tab.content,
-          settings: settings,
-        );
-      },
-    );
+    // 直接返回 content，不使用 Navigator 包裹
+    // 这样可以避免无限加载问题
+    return tab.content;
   }
 
   /// 构建可拖动的分隔条
@@ -1684,9 +1679,9 @@ class _TabManagerScreenState extends State<TabManagerScreen>
   }) {
     return Column(
       children: [
-        // 标签栏
-        PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+        // 标签栏 - 使用 SizedBox 固定高度，避免溢出
+        SizedBox(
+          height: 48,
           child: _buildTabBar(
             tabs: tabs,
             controller: controller,
@@ -1701,7 +1696,6 @@ class _TabManagerScreenState extends State<TabManagerScreen>
           ),
         ),
         // 内容区（包裹 PanelTheme 让子组件能获取面板信息）
-        // 每个标签页内容用 Navigator 包裹，使页面跳转只在当前面板内进行
         Expanded(
           child: PanelTheme(
             data: PanelThemeData(
