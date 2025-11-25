@@ -73,8 +73,18 @@ class _ProjectListScreenState extends State<ProjectListScreen> with AutomaticKee
     super.initState();
     // 监听共享数据变化
     _setupDataListeners();
+    // 先从缓存读取现有数据（避免显示空白）
+    _initFromCache();
     // 初始加载
     _loadProjects();
+  }
+
+  // 从缓存初始化数据
+  void _initFromCache() {
+    final cachedProjects = _dataService.getProjects(isCodex: _isCodex);
+    if (cachedProjects.isNotEmpty) {
+      _projects = cachedProjects;
+    }
   }
 
   @override

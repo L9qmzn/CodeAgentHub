@@ -723,6 +723,9 @@ class _TabManagerScreenState extends State<TabManagerScreen>
       if (context.mounted) {
         final primaryColor = Theme.of(context).colorScheme.primary;
         // 显示顶部MaterialBanner通知（比SnackBar更显眼）
+        // 限制标题长度，避免过长遮挡界面
+        final title = _tabs[tabIndex].title;
+        final displayTitle = title.length > 20 ? '${title.substring(0, 20)}...' : title;
         ScaffoldMessenger.of(context).showMaterialBanner(
           MaterialBanner(
             backgroundColor: primaryColor.withOpacity(0.95),
@@ -730,14 +733,16 @@ class _TabManagerScreenState extends State<TabManagerScreen>
               children: [
                 const Icon(Icons.chat, color: Colors.white, size: 20),
                 const SizedBox(width: 12),
-                Expanded(
+                Flexible(
                   child: Text(
-                    '${_tabs[tabIndex].title} 有新回复',
+                    '$displayTitle 有新回复',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -1242,6 +1247,9 @@ class _TabManagerScreenState extends State<TabManagerScreen>
 
       if (context.mounted) {
         final primaryColor = Theme.of(context).colorScheme.primary;
+        // 限制标题长度，避免过长遮挡界面
+        final title = _rightTabs[tabIndex].title;
+        final displayTitle = title.length > 20 ? '${title.substring(0, 20)}...' : title;
         ScaffoldMessenger.of(context).showMaterialBanner(
           MaterialBanner(
             backgroundColor: primaryColor.withOpacity(0.95),
@@ -1249,14 +1257,16 @@ class _TabManagerScreenState extends State<TabManagerScreen>
               children: [
                 const Icon(Icons.chat, color: Colors.white, size: 20),
                 const SizedBox(width: 12),
-                Expanded(
+                Flexible(
                   child: Text(
-                    '${_rightTabs[tabIndex].title} 有新回复',
+                    '$displayTitle 有新回复',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -1663,6 +1673,7 @@ class _TabManagerScreenState extends State<TabManagerScreen>
   }
 
   Widget _buildPanel({
+    Key? key,
     required List<TabInfo> tabs,
     required TabController controller,
     required void Function(int) onCloseTab,
@@ -1678,6 +1689,7 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     Color? contentBackgroundColor, // 内容区背景颜色
   }) {
     return Column(
+      key: key,
       children: [
         // 标签栏 - 使用 SizedBox 固定高度，避免溢出
         SizedBox(
@@ -1717,53 +1729,24 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     final cardColor = Theme.of(context).cardColor;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final dividerColor = Theme.of(context).dividerColor;
-
-    // 非分屏模式：使用原有布局
-    if (!_isSplitScreen) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(_getAppBarTitle()),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
-            child: _buildTabBar(
-              tabs: _tabs,
-              controller: _tabController,
-              onCloseTab: _closeTab,
-              onContextMenu: _showTabContextMenu,
-              onAddTab: _addNewTab,
-              cardColor: cardColor,
-              primaryColor: primaryColor,
-              dividerColor: dividerColor,
-              showOpenSplitButton: true,
-            ),
-          ),
-        ),
-        body: TabBarView(
-          controller: _tabController,
-          children: _tabs.map((tab) => _wrapWithNavigator(tab)).toList(),
-        ),
-      );
-    }
-
-    // 分屏模式：左右两个独立面板，隐藏顶部标题栏
-    // 右侧面板背景色调整（可在此处修改）
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // ========== 右侧面板背景色配置 ==========
-    // 调整这里的颜色来改变右侧面板的背景色
-    // 深色模式：可以用 Colors.white.withOpacity(0.05) 变亮，或 Colors.black.withOpacity(0.1) 变暗
-    // 浅色模式：可以用 Colors.black.withOpacity(0.03) 变暗，或 Colors.white.withOpacity(0.5) 变亮
+
+    // 右侧面板背景色配置
     final rightPanelContentBgColor = isDark
         ? Color.alphaBlend(const Color(0xFFF7A55A).withOpacity(0.03), Theme.of(context).scaffoldBackgroundColor)
         : Color.alphaBlend(const Color(0xFFF7A55A).withOpacity(0.03), Theme.of(context).scaffoldBackgroundColor);
-    // ========================================
 
+    // 统一使用分屏布局结构，避免切换时重建左侧面板
+    // 非分屏时：左侧面板占满，不显示右侧面板和分隔条
+    // 分屏时：左右面板按比例显示
     return Scaffold(
       body: Row(
         children: [
-          // 左侧面板
+          // 左侧面板（始终存在，使用 key 保持状态）
           Expanded(
-            flex: (_splitRatio * 1000).round(),
+            flex: _isSplitScreen ? (_splitRatio * 1000).round() : 1,
             child: _buildPanel(
+              key: const ValueKey('left_panel'), // 使用固定 key 保持状态
               tabs: _tabs,
               controller: _tabController,
               onCloseTab: _closeTab,
@@ -1773,16 +1756,18 @@ class _TabManagerScreenState extends State<TabManagerScreen>
               primaryColor: primaryColor,
               dividerColor: dividerColor,
               showOpenSplitButton: true,
-              panelType: PanelType.left,
+              panelType: _isSplitScreen ? PanelType.left : PanelType.single,
             ),
           ),
-          // 可拖动的分隔条
-          _buildDraggableDivider(dividerColor, primaryColor),
-          // 右侧面板
-          if (_rightTabController != null && _rightTabs.isNotEmpty)
+          // 可拖动的分隔条（仅分屏时显示）
+          if (_isSplitScreen)
+            _buildDraggableDivider(dividerColor, primaryColor),
+          // 右侧面板（仅分屏时显示）
+          if (_isSplitScreen && _rightTabController != null && _rightTabs.isNotEmpty)
             Expanded(
               flex: ((1.0 - _splitRatio) * 1000).round(),
               child: _buildPanel(
+                key: const ValueKey('right_panel'),
                 tabs: _rightTabs,
                 controller: _rightTabController!,
                 onCloseTab: _closeRightTab,
@@ -1828,7 +1813,7 @@ class _AddTabButtonState extends State<_AddTabButton> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedOpacity(
-          opacity: _isHovered ? 1.0 : 0.3,
+          opacity: _isHovered ? 1.0 : 0.5,
           duration: const Duration(milliseconds: 150),
           child: Container(
             height: 48,
@@ -1837,7 +1822,9 @@ class _AddTabButtonState extends State<_AddTabButton> {
             child: Icon(
               Icons.add,
               size: 18,
-              color: widget.dividerColor,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white70
+                  : Colors.black54,
             ),
           ),
         ),

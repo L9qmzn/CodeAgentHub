@@ -128,9 +128,17 @@ class SharedProjectDataService {
   /// 刷新项目列表
   /// [force] - true: 强制刷新; false: 只在过期时刷新
   Future<List<Project>> refresh({required bool isCodex, bool force = false}) async {
+    // 获取当前缓存
+    final cachedProjects = getProjects(isCodex: isCodex);
+
+    // 如果缓存为空，强制刷新
+    if (cachedProjects.isEmpty) {
+      force = true;
+    }
+
     // 检查是否需要刷新
     if (!force && isCacheValid(isCodex: isCodex)) {
-      return getProjects(isCodex: isCodex);
+      return cachedProjects;
     }
 
     // 检查是否正在加载
@@ -250,13 +258,22 @@ class SharedProjectDataService {
     bool force = false,
     int limit = 50,
   }) async {
+    // 获取当前缓存数据
+    final cachedSessions = getRecentSessions(isCodex: isCodex);
+
     // 检查是否需要刷新
     final lastRefresh = isCodex ? _lastCodexSessionsRefresh : _lastClaudeSessionsRefresh;
+
+    // 如果缓存为空，强制刷新
+    if (cachedSessions.isEmpty) {
+      force = true;
+    }
+
     if (!force && lastRefresh != null) {
       final timeSinceRefresh = DateTime.now().difference(lastRefresh);
       if (timeSinceRefresh < _refreshInterval) {
-        // 未过期，返回缓存数据
-        return getRecentSessions(isCodex: isCodex);
+        // 未过期且缓存非空，返回缓存数据
+        return cachedSessions;
       }
     }
 
@@ -283,13 +300,13 @@ class SharedProjectDataService {
         if (_codexRepository == null) {
           throw Exception('Codex repository not initialized');
         }
-        // 获取所有项目的最近对话
+        // 获取所有项目的最近对话（并行请求提高速度）
         final projects = await _codexRepository!.getProjects();
-        final allSessions = <Session>[];
-        for (final project in projects) {
-          final projectSessions = await _codexRepository!.getProjectSessions(project.id);
-          allSessions.addAll(projectSessions);
-        }
+        final sessionFutures = projects.map(
+          (project) => _codexRepository!.getProjectSessions(project.id)
+        ).toList();
+        final sessionLists = await Future.wait(sessionFutures);
+        final allSessions = sessionLists.expand((list) => list).toList();
         // 按更新时间排序并限制数量
         allSessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         sessions = allSessions.take(limit).toList();
@@ -297,13 +314,13 @@ class SharedProjectDataService {
         if (_claudeRepository == null) {
           throw Exception('Claude repository not initialized');
         }
-        // 获取所有项目的最近对话
+        // 获取所有项目的最近对话（并行请求提高速度）
         final projects = await _claudeRepository!.getProjects();
-        final allSessions = <Session>[];
-        for (final project in projects) {
-          final projectSessions = await _claudeRepository!.getProjectSessions(project.id);
-          allSessions.addAll(projectSessions);
-        }
+        final sessionFutures = projects.map(
+          (project) => _claudeRepository!.getProjectSessions(project.id)
+        ).toList();
+        final sessionLists = await Future.wait(sessionFutures);
+        final allSessions = sessionLists.expand((list) => list).toList();
         // 按更新时间排序并限制数量
         allSessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         sessions = allSessions.take(limit).toList();

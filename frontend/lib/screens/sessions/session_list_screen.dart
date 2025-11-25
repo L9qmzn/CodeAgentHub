@@ -62,19 +62,21 @@ class _SessionListScreenState extends State<SessionListScreen> {
 
   Future<void> _loadSessions() async {
     if (widget.project == null) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     try {
       final sessions = await widget.repository.getProjectSessions(widget.project!.id);
-      setState(() {
-        _sessions = sessions;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _sessions = sessions;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

@@ -64,7 +64,19 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> with Automa
   void initState() {
     super.initState();
     _setupDataListeners();
+    // 先从缓存读取现有数据（避免显示空白）
+    _initFromCache();
+    // 然后触发刷新
     _loadRecentSessions();
+  }
+
+  // 从缓存初始化数据
+  void _initFromCache() {
+    final isCodex = _currentMode == AgentMode.codex;
+    final cachedSessions = _dataService.getRecentSessions(isCodex: isCodex);
+    if (cachedSessions.isNotEmpty) {
+      _recentSessions = cachedSessions;
+    }
   }
 
   @override
@@ -143,6 +155,9 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> with Automa
 
     // 如果共享模式变化，重新加载会话
     if (oldWidget.sharedMode != widget.sharedMode && widget.sharedMode != null) {
+      // 先从缓存读取（避免显示空白）
+      _initFromCache();
+      // 然后触发刷新
       _loadRecentSessions();
     }
   }
