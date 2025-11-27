@@ -667,4 +667,21 @@ class ApiCodexRepository implements CodexRepository {
 
     return projectSessions;
   }
+
+  @override
+  Future<List<Session>> getAllSessions() async {
+    final allSessions = await _apiService.getSessions();
+
+    // 将所有会话转换为 Session 对象
+    return allSessions.map((s) => Session(
+      id: s['session_id'],
+      projectId: s['cwd'],
+      title: s['title'],
+      name: s['title'],
+      cwd: s['cwd'],
+      createdAt: DateTime.parse(s['created_at']),
+      updatedAt: DateTime.parse(s['updated_at']),
+      messageCount: s['message_count'] ?? 0,
+    )).toList();
+  }
 }

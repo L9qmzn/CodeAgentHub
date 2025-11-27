@@ -1247,12 +1247,7 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                           children: [
                             // 桌面版使用SelectionArea包装，允许自由选择文本
                             PlatformHelper.shouldEnableTextSelection
-                                ? Listener(
-                                    onPointerDown: (_) {
-                                      // 点击消息区域时，让输入框失去焦点，以便SelectionArea可以选择文本
-                                      _inputFocusNode.unfocus();
-                                    },
-                                    child: SelectionArea(
+                                ? SelectionArea(
                                     child: NotificationListener<ScrollNotification>(
                                       onNotification: _handleScrollNotification,
                                       child: ListView.builder(
@@ -1262,25 +1257,23 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                   itemCount: _messages.length + (_isLoadingMore || _hasMoreMessages ? 1 : 0),
                                   cacheExtent: 1000, // 增加缓存范围，减少重建
                                   addAutomaticKeepAlives: true, // 保持已构建的item
-                                  addRepaintBoundaries: true, // 添加重绘边界，隔离重绘
+                                  addRepaintBoundaries: false, // 禁用重绘边界，避免影响 SelectionArea
                                   itemBuilder: (context, index) {
                                     // 第一个item显示加载指示器
                                     if ((_isLoadingMore || _hasMoreMessages) && index == 0) {
                                       return _buildLoadMoreIndicator();
                                     }
                                     final messageIndex = (_isLoadingMore || _hasMoreMessages) ? index - 1 : index;
-                                    return RepaintBoundary(
-                                      child: MessageBubble(
-                                        key: ValueKey(_messages[messageIndex].id),
-                                        message: _messages[messageIndex],
-                                        hideToolCalls: _effectiveHideToolCalls,
-                                      ),
+                                    // 不使用 RepaintBoundary 包裹，避免影响 SelectionArea 的文本选择
+                                    return MessageBubble(
+                                      key: ValueKey(_messages[messageIndex].id),
+                                      message: _messages[messageIndex],
+                                      hideToolCalls: _effectiveHideToolCalls,
                                     );
                                   },
                                 ),
                               ),
-                            ),
-                          )
+                            )
                           : NotificationListener<ScrollNotification>(
                               onNotification: _handleScrollNotification,
                               child: ListView.builder(
@@ -1290,19 +1283,18 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                 itemCount: _messages.length + (_isLoadingMore || _hasMoreMessages ? 1 : 0),
                                 cacheExtent: 1000, // 增加缓存范围，减少重建
                                 addAutomaticKeepAlives: true, // 保持已构建的item
-                                addRepaintBoundaries: true, // 添加重绘边界，隔离重绘
+                                addRepaintBoundaries: false, // 禁用重绘边界（与桌面端保持一致）
                                 itemBuilder: (context, index) {
                                   // 第一个item显示加载指示器
                                   if ((_isLoadingMore || _hasMoreMessages) && index == 0) {
                                     return _buildLoadMoreIndicator();
                                   }
                                   final messageIndex = (_isLoadingMore || _hasMoreMessages) ? index - 1 : index;
-                                  return RepaintBoundary(
-                                    child: MessageBubble(
-                                      key: ValueKey(_messages[messageIndex].id),
-                                      message: _messages[messageIndex],
-                                      hideToolCalls: _effectiveHideToolCalls,
-                                    ),
+                                  // 不使用 RepaintBoundary 包裹（与桌面端保持一致）
+                                  return MessageBubble(
+                                    key: ValueKey(_messages[messageIndex].id),
+                                    message: _messages[messageIndex],
+                                    hideToolCalls: _effectiveHideToolCalls,
                                   );
                                 },
                               ),

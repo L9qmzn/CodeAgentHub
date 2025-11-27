@@ -104,6 +104,33 @@ class MockProjectRepository implements ProjectRepository {
   }
 
   @override
+  Future<List<Session>> getAllSessions() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [
+      Session(
+        id: 'session-1',
+        projectId: 'project-1',
+        title: 'Test Session 1',
+        name: 'Test Session 1',
+        cwd: '/projects/test',
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        updatedAt: DateTime.now().subtract(const Duration(hours: 2)),
+        messageCount: 5,
+      ),
+      Session(
+        id: 'session-2',
+        projectId: 'project-2',
+        title: 'Test Session 2',
+        name: 'Test Session 2',
+        cwd: '/projects/another',
+        createdAt: DateTime.now().subtract(const Duration(days: 2)),
+        updatedAt: DateTime.now().subtract(const Duration(hours: 5)),
+        messageCount: 8,
+      ),
+    ];
+  }
+
+  @override
   Future<Map<String, int>> reloadSessions({String? claudeDir}) async {
     await Future.delayed(const Duration(seconds: 1));
     return {

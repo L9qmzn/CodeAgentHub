@@ -300,13 +300,9 @@ class SharedProjectDataService {
         if (_codexRepository == null) {
           throw Exception('Codex repository not initialized');
         }
-        // 获取所有项目的最近对话（并行请求提高速度）
-        final projects = await _codexRepository!.getProjects();
-        final sessionFutures = projects.map(
-          (project) => _codexRepository!.getProjectSessions(project.id)
-        ).toList();
-        final sessionLists = await Future.wait(sessionFutures);
-        final allSessions = sessionLists.expand((list) => list).toList();
+        // 直接获取所有会话（一次 API 调用，避免重复请求）
+        final allSessions = await _codexRepository!.getAllSessions();
+
         // 按更新时间排序并限制数量
         allSessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         sessions = allSessions.take(limit).toList();
@@ -314,13 +310,9 @@ class SharedProjectDataService {
         if (_claudeRepository == null) {
           throw Exception('Claude repository not initialized');
         }
-        // 获取所有项目的最近对话（并行请求提高速度）
-        final projects = await _claudeRepository!.getProjects();
-        final sessionFutures = projects.map(
-          (project) => _claudeRepository!.getProjectSessions(project.id)
-        ).toList();
-        final sessionLists = await Future.wait(sessionFutures);
-        final allSessions = sessionLists.expand((list) => list).toList();
+        // 直接获取所有会话（一次 API 调用，避免重复请求）
+        final allSessions = await _claudeRepository!.getAllSessions();
+
         // 按更新时间排序并限制数量
         allSessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         sessions = allSessions.take(limit).toList();

@@ -28,6 +28,7 @@ abstract class CodexRepository {
   Future<List<Project>> getProjects();
   Future<Project> getProject(String id);
   Future<List<Session>> getProjectSessions(String projectId);
+  Future<List<Session>> getAllSessions(); // 获取所有会话（不按项目过滤）
 
   // Session 管理
   Future<Session> getSession(String id);

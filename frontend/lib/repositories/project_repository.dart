@@ -6,6 +6,7 @@ abstract class ProjectRepository {
   Future<List<Project>> getProjects();
   Future<Project> getProject(String id);
   Future<List<Session>> getProjectSessions(String projectId);
+  Future<List<Session>> getAllSessions(); // 获取所有会话（不按项目过滤）
   Future<Session> getSession(String sessionId);
 
   // 从 Claude Code 目录重新加载会话
