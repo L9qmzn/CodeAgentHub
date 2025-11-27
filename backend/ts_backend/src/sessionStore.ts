@@ -1,4 +1,5 @@
 import fs from "fs";
+import { promises as fsPromises } from "fs";
 import path from "path";
 
 import { CLAUDE_PROJECTS_DIR, CLAUDE_ROOT } from "./config";
@@ -167,6 +168,20 @@ export function countSessionMessages(cwd: string, sessionId: string): number {
 
   try {
     const content = fs.readFileSync(filePath, "utf-8");
+    return content
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
+export async function countSessionMessagesAsync(cwd: string, sessionId: string): Promise<number> {
+  const filePath = sessionFilePath(cwd, sessionId);
+
+  try {
+    await fsPromises.access(filePath);
+    const content = await fsPromises.readFile(filePath, "utf-8");
     return content
       .split(/\r?\n/)
       .filter((line) => line.trim().length > 0).length;
@@ -377,6 +392,25 @@ export function listSessionSummaries(): SessionSummary[] {
     updated_at: strToDate(row.updated_at),
     message_count: countSessionMessages(row.cwd, row.session_id),
   }));
+}
+
+export async function listSessionSummariesAsync(): Promise<SessionSummary[]> {
+  const rows = getDb()
+    .prepare(
+      "SELECT session_id, title, cwd, created_at, updated_at FROM sessions ORDER BY updated_at DESC",
+    )
+    .all() as Record<string, string>[];
+
+  const summariesPromises = rows.map(async (row) => ({
+    session_id: row.session_id,
+    title: row.title,
+    cwd: row.cwd,
+    created_at: strToDate(row.created_at),
+    updated_at: strToDate(row.updated_at),
+    message_count: await countSessionMessagesAsync(row.cwd, row.session_id),
+  }));
+
+  return Promise.all(summariesPromises);
 }
 
 export function persistSessionMetadata(params: {

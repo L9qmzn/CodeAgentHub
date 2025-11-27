@@ -24,6 +24,7 @@ import {
   bootstrapSessionsFromFiles,
   fetchSession,
   listSessionSummaries,
+  listSessionSummariesAsync,
   persistSessionMetadata,
 } from "./sessionStore";
 import {
@@ -420,8 +421,13 @@ export function createApp(): express.Express {
   });
   app.use(basicAuthMiddleware);
 
-  app.get("/sessions", (_req, res) => {
-    res.json(listSessionSummaries());
+  app.get("/sessions", async (_req, res) => {
+    try {
+      const summaries = await listSessionSummariesAsync();
+      res.json(summaries);
+    } catch (error) {
+      res.status(500).json({ detail: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.get("/sessions/:sessionId", (req, res) => {
