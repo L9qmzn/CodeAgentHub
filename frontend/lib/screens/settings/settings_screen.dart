@@ -350,28 +350,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 32),
 
-          // ========== 关于 ==========
-          _buildSectionTitle(context, '关于'),
+          // ========== 账户 ==========
+          _buildSectionTitle(context, '账户'),
           _buildSettingCard(context,
             child: Column(
               children: [
                 ListTile(
-                  title: Text('版本', style: TextStyle(fontSize: 16, color: textPrimary)),
-                  trailing: Text('1.0.0', style: TextStyle(fontSize: 14, color: appColors.textSecondary)),
+                  leading: Icon(Icons.person, color: primaryColor),
+                  title: Text('修改用户名', style: TextStyle(fontSize: 16, color: textPrimary)),
+                  subtitle: Text('修改当前账户用户名', style: TextStyle(fontSize: 13, color: appColors.textSecondary)),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: appColors.textSecondary),
+                  onTap: () => _showChangeUsernameDialog(),
                 ),
                 Divider(height: 1, color: dividerColor),
                 ListTile(
-                  title: Text('隐私政策', style: TextStyle(fontSize: 16, color: appColors.textSecondary)),
-                  subtitle: Text('功能开发中...', style: TextStyle(fontSize: 12, color: appColors.textTertiary, fontStyle: FontStyle.italic)),
-                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: appColors.textTertiary),
-                  onTap: null,
+                  leading: Icon(Icons.password, color: primaryColor),
+                  title: Text('修改密码', style: TextStyle(fontSize: 16, color: textPrimary)),
+                  subtitle: Text('修改当前账户密码', style: TextStyle(fontSize: 13, color: appColors.textSecondary)),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: appColors.textSecondary),
+                  onTap: () => _showChangePasswordDialog(),
                 ),
                 Divider(height: 1, color: dividerColor),
                 ListTile(
-                  title: Text('服务条款', style: TextStyle(fontSize: 16, color: appColors.textSecondary)),
-                  subtitle: Text('功能开发中...', style: TextStyle(fontSize: 12, color: appColors.textTertiary, fontStyle: FontStyle.italic)),
-                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: appColors.textTertiary),
-                  onTap: null,
+                  leading: Icon(Icons.logout, color: errorColor),
+                  title: Text('退出登录', style: TextStyle(fontSize: 16, color: errorColor, fontWeight: FontWeight.w500)),
+                  onTap: () => _handleLogout(),
                 ),
               ],
             ),
@@ -379,13 +382,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 32),
 
-          // ========== 账户 ==========
-          _buildSectionTitle(context, '账户'),
+          // ========== 关于 ==========
+          _buildSectionTitle(context, '关于'),
           _buildSettingCard(context,
             child: ListTile(
-              leading: Icon(Icons.logout, color: errorColor),
-              title: Text('退出登录', style: TextStyle(fontSize: 16, color: errorColor, fontWeight: FontWeight.w500)),
-              onTap: () => _handleLogout(),
+              title: Text('版本', style: TextStyle(fontSize: 16, color: textPrimary)),
+              trailing: Text('1.1.7', style: TextStyle(fontSize: 14, color: appColors.textSecondary)),
             ),
           ),
         ],
@@ -439,6 +441,360 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'haiku': return 'Haiku';
       default: return model;
     }
+  }
+
+  void _showChangeUsernameDialog() {
+    final newUsernameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final appColors = context.appColors;
+        final textPrimary = Theme.of(context).textTheme.bodyLarge!.color!;
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        final dividerColor = Theme.of(context).dividerColor;
+        final cardColor = Theme.of(context).cardColor;
+        final errorColor = Theme.of(context).colorScheme.error;
+
+        return AlertDialog(
+          backgroundColor: cardColor,
+          title: Text('修改用户名', style: TextStyle(color: textPrimary)),
+          content: TextField(
+            controller: newUsernameController,
+            style: TextStyle(color: textPrimary),
+            decoration: InputDecoration(
+              labelText: '新用户名',
+              labelStyle: TextStyle(color: appColors.textSecondary),
+              hintText: '输入新用户名',
+              hintStyle: TextStyle(color: appColors.textTertiary),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: dividerColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: primaryColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('取消', style: TextStyle(color: appColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () async {
+                final newUsername = newUsernameController.text.trim();
+
+                if (newUsername.isEmpty) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('请输入新用户名'),
+                        backgroundColor: errorColor,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(
+                          top: 16,
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).size.height - 100,
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                try {
+                  await _changeUsername(newUsername);
+                  if (mounted) {
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('用户名修改成功'),
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(
+                          top: 16,
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).size.height - 100,
+                        ),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('用户名修改失败: $e'),
+                        backgroundColor: errorColor,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(
+                          top: 16,
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).size.height - 100,
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: Text('确定', style: TextStyle(color: primaryColor)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final oldPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool obscureOldPassword = true;
+    bool obscureNewPassword = true;
+    bool obscureConfirmPassword = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final appColors = context.appColors;
+        final textPrimary = Theme.of(context).textTheme.bodyLarge!.color!;
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        final dividerColor = Theme.of(context).dividerColor;
+        final cardColor = Theme.of(context).cardColor;
+        final errorColor = Theme.of(context).colorScheme.error;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: cardColor,
+              title: Text('修改密码', style: TextStyle(color: textPrimary)),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: oldPasswordController,
+                      obscureText: obscureOldPassword,
+                      style: TextStyle(color: textPrimary),
+                      decoration: InputDecoration(
+                        labelText: '当前密码',
+                        labelStyle: TextStyle(color: appColors.textSecondary),
+                        hintText: '输入当前密码',
+                        hintStyle: TextStyle(color: appColors.textTertiary),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: dividerColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: primaryColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureOldPassword ? Icons.visibility_off : Icons.visibility,
+                            color: appColors.textSecondary,
+                          ),
+                          onPressed: () {
+                            setState(() => obscureOldPassword = !obscureOldPassword);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: newPasswordController,
+                      obscureText: obscureNewPassword,
+                      style: TextStyle(color: textPrimary),
+                      decoration: InputDecoration(
+                        labelText: '新密码',
+                        labelStyle: TextStyle(color: appColors.textSecondary),
+                        hintText: '输入新密码',
+                        hintStyle: TextStyle(color: appColors.textTertiary),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: dividerColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: primaryColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureNewPassword ? Icons.visibility_off : Icons.visibility,
+                            color: appColors.textSecondary,
+                          ),
+                          onPressed: () {
+                            setState(() => obscureNewPassword = !obscureNewPassword);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: obscureConfirmPassword,
+                      style: TextStyle(color: textPrimary),
+                      decoration: InputDecoration(
+                        labelText: '确认新密码',
+                        labelStyle: TextStyle(color: appColors.textSecondary),
+                        hintText: '再次输入新密码',
+                        hintStyle: TextStyle(color: appColors.textTertiary),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: dividerColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: primaryColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                            color: appColors.textSecondary,
+                          ),
+                          onPressed: () {
+                            setState(() => obscureConfirmPassword = !obscureConfirmPassword);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text('取消', style: TextStyle(color: appColors.textSecondary)),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final oldPassword = oldPasswordController.text;
+                    final newPassword = newPasswordController.text;
+                    final confirmPassword = confirmPasswordController.text;
+
+                    if (oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('请填写所有字段'),
+                            backgroundColor: errorColor,
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              top: 16,
+                              left: 16,
+                              right: 16,
+                              bottom: MediaQuery.of(context).size.height - 100,
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    if (newPassword != confirmPassword) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('两次输入的新密码不一致'),
+                            backgroundColor: errorColor,
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              top: 16,
+                              left: 16,
+                              right: 16,
+                              bottom: MediaQuery.of(context).size.height - 100,
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    try {
+                      await _changePassword(oldPassword, newPassword);
+                      if (mounted) {
+                        Navigator.pop(dialogContext);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('密码修改成功'),
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              top: 16,
+                              left: 16,
+                              right: 16,
+                              bottom: MediaQuery.of(context).size.height - 100,
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('密码修改失败: $e'),
+                            backgroundColor: errorColor,
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              top: 16,
+                              left: 16,
+                              right: 16,
+                              bottom: MediaQuery.of(context).size.height - 100,
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: Text('确定', style: TextStyle(color: primaryColor)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _changeUsername(String newUsername) async {
+    final authService = await AuthService.getInstance();
+    final oldUsername = authService.username;
+
+    if (oldUsername == null) {
+      throw Exception('用户未登录');
+    }
+
+    // 使用 claudeRepository 的 apiService 调用修改用户名接口
+    // 认证通过 Basic Auth（已登录状态）自动处理
+    await widget.claudeRepository.apiService.changeUsername(
+      oldUsername: oldUsername,
+      newUsername: newUsername,
+    );
+
+    // 修改成功，更新本地保存的用户名
+    await authService.updateUsername(newUsername);
+  }
+
+  Future<void> _changePassword(String oldPassword, String newPassword) async {
+    final authService = await AuthService.getInstance();
+    final username = authService.username;
+
+    if (username == null) {
+      throw Exception('用户未登录');
+    }
+
+    // 使用 claudeRepository 的 apiService 调用修改密码接口
+    await widget.claudeRepository.apiService.changePassword(
+      userId: username,
+      oldPassword: oldPassword,
+      newPassword: newPassword,
+    );
+
+    // 修改成功，更新本地保存的密码
+    await authService.updatePassword(newPassword);
   }
 
   Future<void> _handleLogout() async {

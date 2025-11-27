@@ -144,3 +144,12 @@ export function defaultCodexUserSettings(userId: string): CodexUserSettings {
     skip_git_repo_check: false,
   };
 }
+
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+export interface ChangeUsernameRequest {
+  new_username: string;
+}

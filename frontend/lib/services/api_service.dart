@@ -203,4 +203,57 @@ class ApiService {
       throw Exception('Failed to stop chat: ${response.statusCode}');
     }
   }
+
+  // Change password for the current user
+  Future<void> changePassword({
+    required String userId,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    // 使用旧凭据进行 Basic Auth 认证
+    final credentials = base64Encode(utf8.encode('$userId:$oldPassword'));
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/users/$userId/change-password'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic $credentials',
+      },
+      body: json.encode({
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      final error = json.decode(response.body);
+      throw Exception(error['detail'] ?? '密码修改失败');
+    }
+  }
+
+  // Change username for the current user
+  Future<void> changeUsername({
+    required String oldUsername,
+    required String newUsername,
+  }) async {
+    // 使用已登录的认证信息（通过 authService）
+    final response = await http.post(
+      Uri.parse('$baseUrl/users/$oldUsername/change-username'),
+      headers: _getHeaders(),
+      body: json.encode({
+        'new_username': newUsername,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      // 处理非 JSON 响应（如 HTML 错误页面）
+      try {
+        final error = json.decode(response.body);
+        throw Exception(error['detail'] ?? '用户名修改失败');
+      } catch (e) {
+        // 如果响应不是 JSON，直接抛出状态码信息
+        throw Exception('用户名修改失败: HTTP ${response.statusCode}');
+      }
+    }
+  }
 }

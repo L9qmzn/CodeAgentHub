@@ -17,6 +17,7 @@ import {
   CODEX_SESSIONS_DIR,
   ENABLE_VERBOSE_LOGS,
   USER_CREDENTIALS,
+  updateUserCredentials,
 } from "./config";
 import { initDb } from "./database";
 import {
@@ -33,6 +34,8 @@ import {
 } from "./codexSessionStore";
 import { AnyRecord, formatSse, logSdkMessage, serializeSdkMessage } from "./streaming";
 import {
+  ChangePasswordRequest,
+  ChangeUsernameRequest,
   ChatRequest,
   CodexChatRequest,
   CodexUserSettings,
@@ -481,6 +484,90 @@ export function createApp(): express.Express {
     });
 
     res.json(settings);
+  });
+
+  app.post("/users/:userId/change-password", (req, res) => {
+    const { userId } = req.params;
+    if (!ensureSameUser(req, res, userId)) {
+      return;
+    }
+
+    const body = req.body as ChangePasswordRequest | undefined;
+    const { old_password, new_password } = body ?? {};
+
+    if (!old_password || !new_password) {
+      res.status(400).json({ detail: "old_password and new_password are required" });
+      return;
+    }
+
+    const storedPassword = USER_CREDENTIALS[userId];
+    if (!storedPassword) {
+      res.status(404).json({ detail: "User not found" });
+      return;
+    }
+
+    if (!safeCompare(old_password, storedPassword)) {
+      res.status(401).json({ detail: "Invalid old password" });
+      return;
+    }
+
+    try {
+      updateUserCredentials(userId, userId, new_password);
+      res.json({
+        success: true,
+        message: "Password changed successfully",
+        user_id: userId,
+      });
+    } catch (error) {
+      res.status(500).json({
+        detail: `Failed to update config file: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  });
+
+  app.post("/users/:userId/change-username", (req, res) => {
+    const { userId } = req.params;
+    if (!ensureSameUser(req, res, userId)) {
+      return;
+    }
+
+    const body = req.body as ChangeUsernameRequest | undefined;
+    const newUsername = body?.new_username?.trim();
+
+    if (!newUsername) {
+      res.status(400).json({ detail: "new_username is required" });
+      return;
+    }
+
+    if (newUsername === userId) {
+      res.status(400).json({ detail: "New username must be different from current username" });
+      return;
+    }
+
+    const storedPassword = USER_CREDENTIALS[userId];
+    if (!storedPassword) {
+      res.status(404).json({ detail: "User not found" });
+      return;
+    }
+
+    if (USER_CREDENTIALS[newUsername]) {
+      res.status(409).json({ detail: "Username already exists" });
+      return;
+    }
+
+    try {
+      updateUserCredentials(userId, newUsername, storedPassword);
+      res.json({
+        success: true,
+        message: "Username changed successfully",
+        old_username: userId,
+        new_username: newUsername,
+      });
+    } catch (error) {
+      res.status(500).json({
+        detail: `Failed to update config file: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   });
 
   app.get("/codex/sessions", (_req, res) => {

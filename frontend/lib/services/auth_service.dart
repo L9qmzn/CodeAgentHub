@@ -157,4 +157,18 @@ class AuthService {
     final encoded = base64Encode(utf8.encode(credentials));
     return 'Basic $encoded';
   }
+
+  // 更新密码（修改密码后调用）
+  Future<void> updatePassword(String newPassword) async {
+    _password = newPassword;
+    _loginTime = DateTime.now(); // 更新登录时间
+    await _saveCredentials();
+  }
+
+  // 更新用户名（修改用户名后调用）
+  Future<void> updateUsername(String newUsername) async {
+    _username = newUsername;
+    _loginTime = DateTime.now(); // 更新登录时间
+    await _saveCredentials();
+  }
 }

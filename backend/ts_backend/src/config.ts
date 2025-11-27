@@ -110,10 +110,16 @@ export function loadAppConfig(): AppConfig {
       if (key === "users" && value && typeof value === "object") {
         const sanitized: UserCredentials = {};
         for (const [username, password] of Object.entries(value as Record<string, unknown>)) {
-          if (typeof username === "string" && typeof password === "string") {
+          if (typeof username === "string") {
             const normalized = username.trim();
             if (normalized) {
-              sanitized[normalized] = password;
+              // Accept both string and number passwords (YAML can parse numbers without quotes as numbers)
+              if (typeof password === "string") {
+                sanitized[normalized] = password;
+              } else if (typeof password === "number") {
+                // Convert number to string (e.g., 123 -> "123")
+                sanitized[normalized] = String(password);
+              }
             }
           }
         }
@@ -186,3 +192,59 @@ export const DB_PATH = dbPath;
 export const USER_CREDENTIALS = CONFIG.users;
 export const CODEX_API_KEY = CONFIG.codex_api_key || process.env.CODEX_API_KEY || "";
 export const CODEX_CLI_PATH = CONFIG.codex_cli_path || process.env.CODEX_CLI_PATH || "";
+
+/**
+ * Update user credentials in config.yaml and reload in memory
+ */
+export function updateUserCredentials(
+  oldUsername: string,
+  newUsername: string,
+  newPassword: string,
+): void {
+  // Read current config
+  let currentConfig: AppConfig = CONFIG;
+  try {
+    const content = fs.readFileSync(CONFIG_PATH, "utf-8");
+    const parsed = YAML.parse(content);
+    if (parsed && typeof parsed === "object") {
+      currentConfig = { ...CONFIG, ...parsed };
+    }
+  } catch (error) {
+    // If can't read, use current CONFIG
+  }
+
+  // Update users
+  const updatedUsers: UserCredentials = { ...currentConfig.users };
+
+  // Remove old username
+  delete updatedUsers[oldUsername];
+
+  // Add new username with new password
+  updatedUsers[newUsername] = newPassword;
+
+  // Update config object
+  currentConfig.users = updatedUsers;
+
+  // Write back to file
+  const yamlContent = YAML.stringify({
+    claude_dir: currentConfig.claude_dir || undefined,
+    sessions_db: currentConfig.sessions_db,
+    port: currentConfig.port,
+    users: updatedUsers,
+    codex_dir: currentConfig.codex_dir || undefined,
+    codex_api_key: currentConfig.codex_api_key || undefined,
+    codex_cli_path: currentConfig.codex_cli_path || undefined,
+    verbose_logs: currentConfig.verbose_logs,
+  });
+
+  fs.writeFileSync(CONFIG_PATH, yamlContent, "utf-8");
+
+  // Update in-memory credentials - must clear old keys first
+  // Delete old username if it's different from new username
+  if (oldUsername !== newUsername) {
+    delete USER_CREDENTIALS[oldUsername];
+  }
+
+  // Set new username and password
+  USER_CREDENTIALS[newUsername] = newPassword;
+}
