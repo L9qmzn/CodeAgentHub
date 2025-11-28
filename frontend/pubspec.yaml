@@ -55,6 +55,12 @@ dependencies:
   # File picker as fallback
   file_picker: ^8.0.0+1
 
+  # Clipboard support for images (desktop)
+  super_clipboard: ^0.8.20
+
+  # Path provider for temporary file storage
+  path_provider: ^2.1.4
+
   # Windows registry access for context menu registration
   win32_registry: ^1.1.5
 

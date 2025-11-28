@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 import '../models/message.dart';
 import '../models/session.dart';
 import '../models/session_settings.dart';
@@ -419,6 +421,127 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
           margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
         ),
       );
+    }
+  }
+
+  // Handle paste from clipboard - supports both text and images (desktop only)
+  Future<void> _handlePaste() async {
+    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      return; // Only support desktop platforms
+    }
+
+    try {
+      final clipboard = SystemClipboard.instance;
+      if (clipboard == null) {
+        print('DEBUG: Clipboard not available');
+        // Fall back to default text paste
+        _handleDefaultTextPaste();
+        return;
+      }
+
+      final reader = await clipboard.read();
+
+      // Check if clipboard has image data first (prioritize images over text)
+      bool hasImage = false;
+
+      // Try PNG format
+      if (reader.canProvide(Formats.png)) {
+        reader.getFile(Formats.png, (file) async {
+          try {
+            final bytes = await file.readAll();
+            await _addImageFromBytes(bytes, 'png');
+            hasImage = true;
+          } catch (e) {
+            print('DEBUG: Error reading PNG file: $e');
+          }
+        });
+        return; // Early return to prevent text paste
+      }
+
+      // Try JPEG format
+      if (reader.canProvide(Formats.jpeg)) {
+        reader.getFile(Formats.jpeg, (file) async {
+          try {
+            final bytes = await file.readAll();
+            await _addImageFromBytes(bytes, 'jpeg');
+            hasImage = true;
+          } catch (e) {
+            print('DEBUG: Error reading JPEG file: $e');
+          }
+        });
+        return; // Early return to prevent text paste
+      }
+
+      // Try GIF format
+      if (reader.canProvide(Formats.gif)) {
+        reader.getFile(Formats.gif, (file) async {
+          try {
+            final bytes = await file.readAll();
+            await _addImageFromBytes(bytes, 'gif');
+            hasImage = true;
+          } catch (e) {
+            print('DEBUG: Error reading GIF file: $e');
+          }
+        });
+        return; // Early return to prevent text paste
+      }
+
+      // If no image was found, handle as text paste
+      _handleDefaultTextPaste();
+    } catch (e) {
+      print('DEBUG: Error handling paste: $e');
+      // Fall back to default text paste on error
+      _handleDefaultTextPaste();
+    }
+  }
+
+  // Handle default text paste using system clipboard
+  Future<void> _handleDefaultTextPaste() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (data != null && data.text != null) {
+        final text = data.text!;
+        final selection = _textController.selection;
+        final newText = _textController.text.replaceRange(
+          selection.start,
+          selection.end,
+          text,
+        );
+        _textController.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(
+            offset: selection.start + text.length,
+          ),
+        );
+      }
+    } catch (e) {
+      print('DEBUG: Error in default text paste: $e');
+    }
+  }
+
+  // Add image from bytes
+  Future<void> _addImageFromBytes(Uint8List bytes, String extension) async {
+    try {
+      // Create a temporary file in the system temp directory
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final tempPath = Platform.isWindows
+          ? '${Platform.environment['TEMP']}\\pasted_image_$timestamp.$extension'
+          : '/tmp/pasted_image_$timestamp.$extension';
+
+      final file = File(tempPath);
+      await file.writeAsBytes(bytes);
+
+      final base64 = base64Encode(bytes);
+
+      if (mounted) {
+        setState(() {
+          _selectedImages.add(file);
+          _imageBase64List.add(base64);
+        });
+      }
+    } catch (e) {
+      print('DEBUG: Error adding image from bytes: $e');
+      rethrow;
     }
   }
 
@@ -1808,6 +1931,19 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                     if (!_isSending && _textController.text.trim().isNotEmpty) {
                                       _handleSubmit(_textController.text);
                                     }
+                                  },
+                                  // 桌面端：Ctrl+V / Cmd+V 粘贴（支持文本和图片）
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.keyV,
+                                    control: true,
+                                  ): () {
+                                    _handlePaste();
+                                  },
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.keyV,
+                                    meta: true,
+                                  ): () {
+                                    _handlePaste();
                                   },
                                 },
                           child: TextField(
