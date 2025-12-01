@@ -156,28 +156,51 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
     }
   }
 
-  // 创建安全的图片构建器（禁用网络图片）
+  // 创建安全的图片构建器（完全禁用图片）
   Widget _safeImageBuilder(Uri uri, String? title, String? alt, AppColorExtension appColors) {
-    // 禁用网络图片加载，防止泄露 IP 或卡顿
-    // 只允许 data: 和 file: URI
-    if (uri.scheme == 'data' || uri.scheme == 'file') {
-      return Image.network(uri.toString(), errorBuilder: (context, error, stackTrace) {
-        return Text('[${alt ?? "图片"}]', style: TextStyle(color: appColors.textSecondary));
-      });
+    // 出于安全考虑，完全禁用所有图片加载：
+    // - http(s): 可能泄露客户端 IP、加载恶意资源
+    // - file: 可能泄露本地文件系统内容
+    // - data: 可能包含大量数据导致性能问题
+
+    // 根据 URI scheme 提供不同的提示信息
+    String displayText;
+    if (uri.scheme == 'http' || uri.scheme == 'https') {
+      displayText = '网络图片已禁用';
+    } else if (uri.scheme == 'file') {
+      displayText = '本地文件图片已禁用';
+    } else if (uri.scheme == 'data') {
+      displayText = '内联图片已禁用';
+    } else {
+      displayText = '图片已禁用';
     }
-    // 对于 http(s) 图片，显示占位符
+
+    if (alt != null && alt.isNotEmpty) {
+      displayText += ': $alt';
+    }
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: appColors.toolBackground.withOpacity(0.3),
         borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: appColors.textSecondary.withOpacity(0.2),
+          width: 1,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.image_not_supported, size: 16, color: appColors.textSecondary),
-          const SizedBox(width: 4),
-          Text('图片已禁用: ${alt ?? uri.toString()}', style: TextStyle(color: appColors.textSecondary, fontSize: 12)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              displayText,
+              style: TextStyle(color: appColors.textSecondary, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

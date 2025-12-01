@@ -414,6 +414,17 @@ class _TabManagerScreenState extends State<TabManagerScreen>
           final currentTabIndex = _tabs.indexWhere((tab) => tab.id == tabId);
           if (currentTabIndex != -1) {
             _handleBackToHome(currentTabIndex);
+          } else {
+            // 找不到对应的 tab（可能已被关闭），退回到当前标签或主页
+            print('WARNING: Cannot find tab with id=$tabId, falling back to current tab or home');
+            if (_currentIndex >= 0 && _currentIndex < _tabs.length) {
+              _handleBackToHome(_currentIndex);
+            } else {
+              // 如果当前索引也无效，尝试返回第一个标签
+              if (_tabs.isNotEmpty) {
+                _handleBackToHome(0);
+              }
+            }
           }
         },
       );

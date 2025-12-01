@@ -239,6 +239,8 @@ class ApiCodexRepository implements CodexRepository {
     // 为当前这轮对话生成一个固定的消息 ID
     final fixedMessageId = 'codex_${DateTime.now().millisecondsSinceEpoch}';
     final textBuffer = StringBuffer(); // 累积文本内容
+    DateTime? lastTokenEmitTime; // 上次发送 token 的时间
+    const tokenEmitInterval = Duration(milliseconds: 100); // 节流间隔：100ms
 
     try {
       await for (var event in _apiService.chat(
@@ -255,7 +257,10 @@ class ApiCodexRepository implements CodexRepository {
         skipGitRepoCheck: codexSettings?.skipGitRepoCheck,
       )) {
         final eventType = event['event_type'];
-        print('DEBUG Codex sendMessageStream: eventType=$eventType, event=${event.toString().substring(0, event.toString().length > 200 ? 200 : event.toString().length)}');
+        final eventStr = event.toString();
+        final eventPreview = eventStr.length > 300 ? eventStr.substring(0, 300) + '...' : eventStr;
+        print('DEBUG Codex sendMessageStream: eventType=$eventType');
+        print('DEBUG Codex sendMessageStream: event preview: $eventPreview');
 
         // Capture session_id
         if (!sessionIdEmitted && event['session_id'] != null) {
@@ -271,16 +276,22 @@ class ApiCodexRepository implements CodexRepository {
           final text = event['text'] as String?;
           if (text != null && text.isNotEmpty) {
             textBuffer.write(text); // 累积文本
-            // 使用固定的消息 ID 和累积的文本创建消息
-            yield CodexMessageStreamEvent(
-              partialMessage: Message.fromBlocks(
-                id: fixedMessageId,
-                role: MessageRole.assistant,
-                blocks: [
-                  ContentBlock(type: ContentBlockType.text, text: textBuffer.toString()),
-                ],
-              ),
-            );
+
+            // 节流：只在距离上次发送超过 100ms 时才发送更新
+            final now = DateTime.now();
+            if (lastTokenEmitTime == null || now.difference(lastTokenEmitTime!) >= tokenEmitInterval) {
+              lastTokenEmitTime = now;
+              // 使用固定的消息 ID 和累积的文本创建消息
+              yield CodexMessageStreamEvent(
+                partialMessage: Message.fromBlocks(
+                  id: fixedMessageId,
+                  role: MessageRole.assistant,
+                  blocks: [
+                    ContentBlock(type: ContentBlockType.text, text: textBuffer.toString()),
+                  ],
+                ),
+              );
+            }
           }
           continue;
         }
@@ -311,6 +322,19 @@ class ApiCodexRepository implements CodexRepository {
 
         // Handle done event
         if (eventType == 'done') {
+          // 在流结束前，如果 textBuffer 有内容但还没有发送 finalMessage，则发送
+          if (textBuffer.isNotEmpty) {
+            print('DEBUG Codex sendMessageStream: done event, sending final message with buffered text (${textBuffer.length} chars)');
+            yield CodexMessageStreamEvent(
+              finalMessage: Message.fromBlocks(
+                id: fixedMessageId,
+                role: MessageRole.assistant,
+                blocks: [
+                  ContentBlock(type: ContentBlockType.text, text: textBuffer.toString()),
+                ],
+              ),
+            );
+          }
           continue;
         }
 
@@ -486,11 +510,44 @@ class ApiCodexRepository implements CodexRepository {
             isDone: true,
           );
           return;
+        } else {
+          // 未识别的事件类型，记录日志
+          print('DEBUG Codex sendMessageStream: unhandled eventType=$eventType, payload keys: ${event.keys.toList()}');
         }
+      }
+
+      // 流正常结束，如果还有未发送的文本，发送 finalMessage
+      if (textBuffer.isNotEmpty) {
+        print('DEBUG Codex sendMessageStream: stream ended, sending final message with buffered text (${textBuffer.length} chars)');
+        yield CodexMessageStreamEvent(
+          finalMessage: Message.fromBlocks(
+            id: fixedMessageId,
+            role: MessageRole.assistant,
+            blocks: [
+              ContentBlock(type: ContentBlockType.text, text: textBuffer.toString()),
+            ],
+          ),
+        );
       }
 
       yield CodexMessageStreamEvent(isDone: true);
     } catch (e) {
+      print('ERROR Codex sendMessageStream: exception: $e');
+
+      // 即使出错，也尝试发送已累积的文本
+      if (textBuffer.isNotEmpty) {
+        print('DEBUG Codex sendMessageStream: error occurred, but sending buffered text (${textBuffer.length} chars)');
+        yield CodexMessageStreamEvent(
+          finalMessage: Message.fromBlocks(
+            id: fixedMessageId,
+            role: MessageRole.assistant,
+            blocks: [
+              ContentBlock(type: ContentBlockType.text, text: textBuffer.toString()),
+            ],
+          ),
+        );
+      }
+
       yield CodexMessageStreamEvent(
         error: e.toString(),
         isDone: true,
