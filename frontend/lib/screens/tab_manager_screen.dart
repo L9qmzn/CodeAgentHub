@@ -409,7 +409,13 @@ class _TabManagerScreenState extends State<TabManagerScreen>
           }
         },
         hasNewReplyNotifier: newTab.hasNewReplyNotifier,
-        onBack: () => _handleBackToHome(targetIndex),
+        onBack: () {
+          // 通过 tab ID 动态查找当前索引，避免索引失效
+          final currentTabIndex = _tabs.indexWhere((tab) => tab.id == tabId);
+          if (currentTabIndex != -1) {
+            _handleBackToHome(currentTabIndex);
+          }
+        },
       );
     }
 
@@ -448,6 +454,12 @@ class _TabManagerScreenState extends State<TabManagerScreen>
   }
 
   void _handleBackToHome(int tabIndex) async {
+    // 检查索引是否有效
+    if (tabIndex < 0 || tabIndex >= _tabs.length) {
+      print('ERROR: Invalid tabIndex $tabIndex, _tabs.length=${_tabs.length}');
+      return;
+    }
+
     final currentTab = _tabs[tabIndex];
 
     // 如果有保存的上一个界面，则恢复到上一个界面

@@ -156,6 +156,33 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
     }
   }
 
+  // 创建安全的图片构建器（禁用网络图片）
+  Widget _safeImageBuilder(Uri uri, String? title, String? alt, AppColorExtension appColors) {
+    // 禁用网络图片加载，防止泄露 IP 或卡顿
+    // 只允许 data: 和 file: URI
+    if (uri.scheme == 'data' || uri.scheme == 'file') {
+      return Image.network(uri.toString(), errorBuilder: (context, error, stackTrace) {
+        return Text('[${alt ?? "图片"}]', style: TextStyle(color: appColors.textSecondary));
+      });
+    }
+    // 对于 http(s) 图片，显示占位符
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: appColors.toolBackground.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported, size: 16, color: appColors.textSecondary),
+          const SizedBox(width: 4),
+          Text('图片已禁用: ${alt ?? uri.toString()}', style: TextStyle(color: appColors.textSecondary, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
   // 创建统一的 Markdown 样式表
   MarkdownStyleSheet _getMarkdownStyleSheet(Color textPrimary, AppColorExtension appColors) {
     return MarkdownStyleSheet(
@@ -238,7 +265,8 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
         backgroundColor: appColors.codeBackground,
         color: textPrimary,
         fontSize: 13.5,
-        fontFamily: 'Consolas, Monaco, Courier New, monospace',
+        fontFamily: 'monospace',
+        fontFamilyFallback: const ['Consolas', 'Monaco', 'Courier New'],
         letterSpacing: 0,
         height: 1.4,
       ),
@@ -364,6 +392,7 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
         data: text,
         selectable: false, // 外层已有 SelectionArea
         styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
+        imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
       ),
     );
   }
@@ -384,6 +413,7 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
                 data: beforeText,
                 selectable: false,
                 styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
+                imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
               ),
             ),
           );
@@ -411,6 +441,7 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
               data: afterText,
               selectable: false,
               styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
+              imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
             ),
           ),
         );
