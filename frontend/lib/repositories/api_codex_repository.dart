@@ -241,6 +241,7 @@ class ApiCodexRepository implements CodexRepository {
     final textBuffer = StringBuffer(); // 累积文本内容
     DateTime? lastTokenEmitTime; // 上次发送 token 的时间
     const tokenEmitInterval = Duration(milliseconds: 100); // 节流间隔：100ms
+    bool finalMessageEmitted = false; // 标记是否已发送最终消息，避免重复发送
 
     try {
       await for (var event in _apiService.chat(
@@ -303,7 +304,7 @@ class ApiCodexRepository implements CodexRepository {
             final item = payload['item'];
             if (item != null && item['type'] == 'agent_message') {
               final text = item['text'] as String?;
-              if (text != null && text.isNotEmpty) {
+              if (text != null && text.isNotEmpty && !finalMessageEmitted) {
                 // 使用固定的消息 ID 创建最终消息
                 yield CodexMessageStreamEvent(
                   finalMessage: Message.fromBlocks(
@@ -314,6 +315,7 @@ class ApiCodexRepository implements CodexRepository {
                     ],
                   ),
                 );
+                finalMessageEmitted = true; // 标记已发送最终消息
               }
             }
             continue;
@@ -323,7 +325,7 @@ class ApiCodexRepository implements CodexRepository {
         // Handle done event
         if (eventType == 'done') {
           // 在流结束前，如果 textBuffer 有内容但还没有发送 finalMessage，则发送
-          if (textBuffer.isNotEmpty) {
+          if (textBuffer.isNotEmpty && !finalMessageEmitted) {
             print('DEBUG Codex sendMessageStream: done event, sending final message with buffered text (${textBuffer.length} chars)');
             yield CodexMessageStreamEvent(
               finalMessage: Message.fromBlocks(
@@ -334,6 +336,7 @@ class ApiCodexRepository implements CodexRepository {
                 ],
               ),
             );
+            finalMessageEmitted = true; // 标记已发送最终消息
           }
           continue;
         }
@@ -517,7 +520,7 @@ class ApiCodexRepository implements CodexRepository {
       }
 
       // 流正常结束，如果还有未发送的文本，发送 finalMessage
-      if (textBuffer.isNotEmpty) {
+      if (textBuffer.isNotEmpty && !finalMessageEmitted) {
         print('DEBUG Codex sendMessageStream: stream ended, sending final message with buffered text (${textBuffer.length} chars)');
         yield CodexMessageStreamEvent(
           finalMessage: Message.fromBlocks(
@@ -528,6 +531,7 @@ class ApiCodexRepository implements CodexRepository {
             ],
           ),
         );
+        finalMessageEmitted = true; // 标记已发送最终消息
       }
 
       yield CodexMessageStreamEvent(isDone: true);
@@ -535,7 +539,7 @@ class ApiCodexRepository implements CodexRepository {
       print('ERROR Codex sendMessageStream: exception: $e');
 
       // 即使出错，也尝试发送已累积的文本
-      if (textBuffer.isNotEmpty) {
+      if (textBuffer.isNotEmpty && !finalMessageEmitted) {
         print('DEBUG Codex sendMessageStream: error occurred, but sending buffered text (${textBuffer.length} chars)');
         yield CodexMessageStreamEvent(
           finalMessage: Message.fromBlocks(
@@ -546,6 +550,7 @@ class ApiCodexRepository implements CodexRepository {
             ],
           ),
         );
+        finalMessageEmitted = true; // 标记已发送最终消息
       }
 
       yield CodexMessageStreamEvent(
