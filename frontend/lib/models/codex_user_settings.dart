@@ -50,6 +50,7 @@ class CodexUserSettings {
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{
+      'user_id': userId, // 包含 user_id，确保本地存储和加载时不丢失
       'approval_policy': approvalPolicy,
       'sandbox_mode': sandboxMode,
       'model_reasoning_effort': modelReasoningEffort,

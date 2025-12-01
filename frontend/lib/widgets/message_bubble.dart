@@ -8,11 +8,13 @@ import '../core/theme/app_theme.dart';
 class MessageBubble extends StatefulWidget {
   final Message message;
   final bool hideToolCalls;
+  final bool renderMarkdown;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.hideToolCalls = false,
+    this.renderMarkdown = true,
   });
 
   @override
@@ -154,18 +156,184 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
     }
   }
 
+  // 创建统一的 Markdown 样式表
+  MarkdownStyleSheet _getMarkdownStyleSheet(Color textPrimary, AppColorExtension appColors) {
+    return MarkdownStyleSheet(
+      // 段落样式
+      p: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        height: 1.6,
+        letterSpacing: 0.15,
+      ),
+      pPadding: const EdgeInsets.only(bottom: 6), // 段落间较小间距
+
+      // 标题样式 - 上间距大，下间距小，体现层级关系
+      h1: TextStyle(
+        color: textPrimary,
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        letterSpacing: -0.3,
+      ),
+      h1Padding: const EdgeInsets.only(top: 20, bottom: 4), // 上大下小
+
+      h2: TextStyle(
+        color: textPrimary,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        letterSpacing: -0.2,
+      ),
+      h2Padding: const EdgeInsets.only(top: 16, bottom: 4),
+
+      h3: TextStyle(
+        color: textPrimary,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        height: 1.35,
+        letterSpacing: -0.1,
+      ),
+      h3Padding: const EdgeInsets.only(top: 14, bottom: 3),
+
+      h4: TextStyle(
+        color: textPrimary,
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
+      h4Padding: const EdgeInsets.only(top: 12, bottom: 3),
+
+      h5: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
+      h5Padding: const EdgeInsets.only(top: 10, bottom: 2),
+
+      h6: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+        height: 1.4,
+      ),
+      h6Padding: const EdgeInsets.only(top: 8, bottom: 2),
+
+      // 粗体和斜体
+      strong: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.1,
+      ),
+      em: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        fontStyle: FontStyle.italic,
+      ),
+
+      // 行内代码
+      code: TextStyle(
+        backgroundColor: appColors.codeBackground,
+        color: textPrimary,
+        fontSize: 13.5,
+        fontFamily: 'Consolas, Monaco, Courier New, monospace',
+        letterSpacing: 0,
+        height: 1.4,
+      ),
+      codeblockPadding: const EdgeInsets.all(12),
+      codeblockDecoration: BoxDecoration(
+        color: appColors.codeBackground,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: appColors.textSecondary.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+
+      // 链接
+      a: TextStyle(
+        color: const Color(0xFF0969DA), // GitHub 风格的蓝色
+        decoration: TextDecoration.underline,
+        decorationColor: const Color(0xFF0969DA).withOpacity(0.3),
+        decorationStyle: TextDecorationStyle.solid,
+      ),
+
+      // 引用块
+      blockquote: TextStyle(
+        color: appColors.textSecondary,
+        fontSize: 15,
+        height: 1.6,
+        fontStyle: FontStyle.italic,
+      ),
+      blockquotePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      blockquoteDecoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: appColors.textSecondary.withOpacity(0.4),
+            width: 3,
+          ),
+        ),
+        color: appColors.toolBackground.withOpacity(0.2),
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(4),
+          bottomRight: Radius.circular(4),
+        ),
+      ),
+
+      // 分隔线 - 上下间距通过 blockSpacing 控制
+      horizontalRuleDecoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            width: 1,
+            color: appColors.textSecondary.withOpacity(0.15),
+          ),
+        ),
+      ),
+
+      // 列表样式
+      listBullet: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        height: 1.5,
+      ),
+      listBulletPadding: const EdgeInsets.only(right: 6),
+      listIndent: 20,
+
+      // 表格
+      tableHead: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
+      tableBody: TextStyle(
+        color: textPrimary,
+        fontSize: 15,
+        height: 1.5,
+      ),
+      tableBorder: TableBorder.all(
+        color: appColors.textSecondary.withOpacity(0.15),
+        width: 1,
+      ),
+      tableCellsPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      tableColumnWidth: const FlexColumnWidth(),
+
+      // 块级元素间距 - 减小到 5，让同级元素更紧凑
+      blockSpacing: 5,
+      textScaleFactor: 1.0,
+    );
+  }
+
   Widget _buildTextBlock(BuildContext context, String text) {
     if (text.isEmpty) return const SizedBox.shrink();
 
     final textPrimary = Theme.of(context).textTheme.bodyLarge!.color!;
     final appColors = context.appColors;
 
-    // 检查是否包含代码块
-    final codeBlockPattern = RegExp(r'```(\w*)[\r\n]+([\s\S]*?)[\r\n]+```');
-    final matches = codeBlockPattern.allMatches(text).toList();
-
-    // 如果没有代码块，使用 Text 直接渲染（外层的 SelectionArea 会处理选择）
-    if (matches.isEmpty) {
+    // 如果不渲染 Markdown，直接显示纯文本
+    if (!widget.renderMarkdown) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(
@@ -179,8 +347,25 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
       );
     }
 
-    // 有代码块，手动处理
-    return _buildTextWithCodeBlocks(context, text, matches, textPrimary, appColors);
+    // 渲染 Markdown：检查是否包含代码块
+    final codeBlockPattern = RegExp(r'```(\w*)[\r\n]+([\s\S]*?)[\r\n]+```');
+    final matches = codeBlockPattern.allMatches(text).toList();
+
+    // 如果有代码块，需要手动处理（因为需要自定义代码块样式和复制功能）
+    if (matches.isNotEmpty) {
+      return _buildTextWithCodeBlocks(context, text, matches, textPrimary, appColors);
+    }
+
+    // 没有代码块，使用 MarkdownBody 渲染所有内容
+    // MarkdownBody 会自动处理所有 Markdown 语法
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: MarkdownBody(
+        data: text,
+        selectable: false, // 外层已有 SelectionArea
+        styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
+      ),
+    );
   }
 
   Widget _buildTextWithCodeBlocks(BuildContext context, String text, List<RegExpMatch> matches, Color textPrimary, AppColorExtension appColors) {
@@ -188,20 +373,17 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
     int lastIndex = 0;
 
     for (final match in matches) {
-      // 添加代码块之前的文本
+      // 添加代码块之前的文本（使用 MarkdownBody 渲染）
       if (match.start > lastIndex) {
         final beforeText = text.substring(lastIndex, match.start);
         if (beforeText.trim().isNotEmpty) {
           widgets.add(
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                beforeText,
-                style: TextStyle(
-                  color: textPrimary,
-                  fontSize: 15,
-                  height: 1.5,
-                ),
+              child: MarkdownBody(
+                data: beforeText,
+                selectable: false,
+                styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
               ),
             ),
           );
@@ -218,20 +400,17 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
       lastIndex = match.end;
     }
 
-    // 添加最后一个代码块之后的文本
+    // 添加最后一个代码块之后的文本（使用 MarkdownBody 渲染）
     if (lastIndex < text.length) {
       final afterText = text.substring(lastIndex);
       if (afterText.trim().isNotEmpty) {
         widgets.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              afterText,
-              style: TextStyle(
-                color: textPrimary,
-                fontSize: 15,
-                height: 1.5,
-              ),
+            child: MarkdownBody(
+              data: afterText,
+              selectable: false,
+              styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
             ),
           ),
         );

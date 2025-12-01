@@ -116,6 +116,12 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
     }
   }
 
+  // 获取渲染 Markdown 设置（使用全局设置）
+  bool get _effectiveRenderMarkdown {
+    final appSettingsService = AppSettingsService();
+    return appSettingsService.renderMarkdown;
+  }
+
   @override
   bool get wantKeepAlive => true; // 保持状态，防止切换标签时丢失消息
 
@@ -130,6 +136,17 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
     _textController.addListener(_onTextChanged);
     _loadMessages();
     _loadCodexSettingsIfNeeded();
+
+    // 监听全局设置变化（用于刷新 UI，例如 renderMarkdown 开关）
+    AppSettingsService().addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) {
+      setState(() {
+        // 触发重建以应用新的设置
+      });
+    }
   }
 
   @override
@@ -164,24 +181,56 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
       // 加载 Codex 设置
       final savedSettings = settingsService.getCodexSessionSettings(widget.session.id);
       if (savedSettings != null && mounted) {
-        setState(() {
-          _codexSettings = savedSettings;
-        });
-        print('DEBUG: Loaded Codex settings from local storage for session ${widget.session.id}');
+        // 检查加载的设置是否有有效的 userId
+        if (savedSettings.userId.isEmpty) {
+          // 旧数据没有 userId，需要从 authService 获取并更新
+          final codexRepo = widget.repository as ApiCodexRepository;
+          final userId = codexRepo.apiService.authService?.username ?? '';
+          if (userId.isNotEmpty) {
+            final updatedSettings = savedSettings.copyWith(userId: userId);
+            setState(() {
+              _codexSettings = updatedSettings;
+            });
+            // 保存更新后的设置
+            await settingsService.saveCodexSessionSettings(widget.session.id, updatedSettings);
+            print('DEBUG: Updated Codex settings with userId=$userId for session ${widget.session.id}');
+          } else {
+            print('ERROR: Cannot update Codex settings, authService.username is empty');
+            setState(() {
+              _codexSettings = null;
+            });
+          }
+        } else {
+          setState(() {
+            _codexSettings = savedSettings;
+          });
+          print('DEBUG: Loaded Codex settings from local storage for session ${widget.session.id}, userId=${savedSettings.userId}');
+        }
       } else {
         // 如果没有保存的设置，使用全局默认 Codex 设置
         final appSettingsService = AppSettingsService();
         await appSettingsService.initialize();
         final codexRepo = widget.repository as ApiCodexRepository;
-        final userId = codexRepo.apiService.authService?.username ?? 'default';
-        final defaultSettings = appSettingsService.getOrCreateCodexSettings(userId);
+        final userId = codexRepo.apiService.authService?.username;
 
-        if (mounted) {
-          setState(() {
-            _codexSettings = defaultSettings;
-          });
+        // 如果没有认证的用户名，使用空字符串作为临时 userId（不会保存到后端）
+        if (userId == null || userId.isEmpty) {
+          print('ERROR: No authenticated username for Codex! authService.isLoggedIn=${codexRepo.apiService.authService?.isLoggedIn}, username=$userId');
+          // 不创建设置，强制用户重新登录
+          if (mounted) {
+            setState(() {
+              _codexSettings = null;
+            });
+          }
+        } else {
+          final defaultSettings = appSettingsService.getOrCreateCodexSettings(userId);
+          if (mounted) {
+            setState(() {
+              _codexSettings = defaultSettings;
+            });
+          }
+          print('DEBUG: Using global default Codex settings for session ${widget.session.id}: userId=$userId, skipGitRepoCheck=${defaultSettings.skipGitRepoCheck}');
         }
-        print('DEBUG: Using global default Codex settings for session ${widget.session.id}: skipGitRepoCheck=${defaultSettings.skipGitRepoCheck}');
       }
     } else {
       // 加载 Claude Code 设置
@@ -707,9 +756,8 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
         final codexRepo = widget.repository as ApiCodexRepository;
 
         // 确保有 Codex 设置，如果没有则使用默认设置
-        CodexUserSettings settings = _codexSettings ?? CodexUserSettings.defaults(
-          codexRepo.apiService.authService?.username ?? 'default'
-        );
+        final userId = codexRepo.apiService.authService?.username ?? '';
+        CodexUserSettings settings = _codexSettings ?? CodexUserSettings.defaults(userId);
 
         // 检查是否禁用了 Git 仓库检查跳过
         if (!settings.skipGitRepoCheck) {
@@ -1030,6 +1078,29 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('正在加载 Codex 设置...'),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              top: 16,
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).size.height - 100,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // 检查 userId 是否有效
+      if (_codexSettings!.userId.isEmpty) {
+        final codexRepo = widget.repository as ApiCodexRepository;
+        final authUsername = codexRepo.apiService.authService?.username;
+
+        print('ERROR ChatScreen._openSettings: userId is empty! authService.username=$authUsername');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('无法打开设置：用户未登录或身份验证失败\n请尝试重新登录应用\n(当前 username: ${authUsername ?? "null"})'),
+            duration: const Duration(seconds: 5),
             behavior: SnackBarBehavior.floating,
             margin: EdgeInsets.only(
               top: 16,
@@ -1389,9 +1460,10 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                     final messageIndex = (_isLoadingMore || _hasMoreMessages) ? index - 1 : index;
                                     // 不使用 RepaintBoundary 包裹，避免影响 SelectionArea 的文本选择
                                     return MessageBubble(
-                                      key: ValueKey(_messages[messageIndex].id),
+                                      key: ValueKey('${_messages[messageIndex].id}_$_effectiveRenderMarkdown'),
                                       message: _messages[messageIndex],
                                       hideToolCalls: _effectiveHideToolCalls,
+                                      renderMarkdown: _effectiveRenderMarkdown,
                                     );
                                   },
                                 ),
@@ -1415,9 +1487,10 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                   final messageIndex = (_isLoadingMore || _hasMoreMessages) ? index - 1 : index;
                                   // 不使用 RepaintBoundary 包裹（与桌面端保持一致）
                                   return MessageBubble(
-                                    key: ValueKey(_messages[messageIndex].id),
+                                    key: ValueKey('${_messages[messageIndex].id}_$_effectiveRenderMarkdown'),
                                     message: _messages[messageIndex],
                                     hideToolCalls: _effectiveHideToolCalls,
+                                    renderMarkdown: _effectiveRenderMarkdown,
                                   );
                                 },
                               ),
@@ -2205,6 +2278,7 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
     _textController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
+    AppSettingsService().removeListener(_onSettingsChanged);
     super.dispose();
   }
 }

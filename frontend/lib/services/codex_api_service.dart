@@ -213,14 +213,20 @@ class CodexApiService {
 
   // Update user settings for Codex
   Future<void> updateUserSettings(String userId, Map<String, dynamic> settings) async {
+    final url = '$baseUrl/codex/users/$userId/settings';
+    print('DEBUG CodexApiService: PUT $url');
+    print('DEBUG CodexApiService: userId=$userId, settings=$settings');
+
     final response = await http.put(
-      Uri.parse('$baseUrl/codex/users/$userId/settings'),
+      Uri.parse(url),
       headers: _getHeaders(),
       body: json.encode(settings),
     );
 
+    print('DEBUG CodexApiService: Response status=${response.statusCode}');
     if (response.statusCode != 200) {
-      throw Exception('Failed to update codex user settings: ${response.statusCode}');
+      print('DEBUG CodexApiService: Error response body=${response.body}');
+      throw Exception('Failed to update codex user settings: ${response.statusCode} - ${response.body}');
     }
   }
 }

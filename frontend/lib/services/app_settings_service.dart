@@ -53,6 +53,7 @@ class AppSettingsService {
   FontFamilyOption _fontFamily = FontFamilyOption.notoSerifSC; // 默认Noto Serif SC字体
   FontSizeOption _fontSize = FontSizeOption.normal; // 默认正常字号
   bool _hideToolCalls = false; // 全局隐藏工具调用设置
+  bool _renderMarkdown = true; // 全局渲染 Markdown 设置（默认开启）
 
   // 全局 Agent 设置（内存缓存，从后端加载）
   ClaudeUserSettings? _claudeSettings;
@@ -74,6 +75,7 @@ class AppSettingsService {
   FontFamilyOption get fontFamily => _fontFamily;
   FontSizeOption get fontSize => _fontSize;
   bool get hideToolCalls => _hideToolCalls;
+  bool get renderMarkdown => _renderMarkdown;
 
   // Getters - Agent 全局设置
   ClaudeUserSettings? get claudeSettings => _claudeSettings;
@@ -144,6 +146,9 @@ class AppSettingsService {
         // 加载隐藏工具调用设置
         _hideToolCalls = json['hide_tool_calls'] ?? false;
 
+        // 加载渲染 Markdown 设置
+        _renderMarkdown = json['render_markdown'] ?? true;
+
         // 加载默认项目设置
         final defaultSessionJson = json['default_session_settings'] as Map<String, dynamic>?;
         if (defaultSessionJson != null) {
@@ -172,6 +177,7 @@ class AppSettingsService {
         'font_family': _fontFamily.name,
         'font_size': _fontSize.name,
         'hide_tool_calls': _hideToolCalls,
+        'render_markdown': _renderMarkdown,
       };
 
       // 保存默认项目设置
@@ -218,6 +224,12 @@ class AppSettingsService {
 
   void setHideToolCalls(bool value) {
     _hideToolCalls = value;
+    _saveSettings();
+    _notifyListeners();
+  }
+
+  void setRenderMarkdown(bool value) {
+    _renderMarkdown = value;
     _saveSettings();
     _notifyListeners();
   }

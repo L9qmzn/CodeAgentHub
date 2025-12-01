@@ -37,6 +37,14 @@ class _CodexSessionSettingsScreenState extends State<CodexSessionSettingsScreen>
   Future<void> _saveSettings() async {
     setState(() => _isSaving = true);
     try {
+      print('DEBUG CodexSessionSettingsScreen: Saving settings for userId=${_currentSettings.userId}');
+      print('DEBUG CodexSessionSettingsScreen: Settings=${_currentSettings.toJson()}');
+
+      // 检查 userId 是否有效
+      if (_currentSettings.userId.isEmpty) {
+        throw Exception('无法保存设置：用户未登录或 userId 无效');
+      }
+
       // Save to backend
       await widget.repository.updateUserSettings(
         _currentSettings.userId,

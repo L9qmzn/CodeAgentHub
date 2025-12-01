@@ -37,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late FontFamilyOption _fontFamily;
   late FontSizeOption _fontSize;
   late bool _hideToolCalls;
+  late bool _renderMarkdown;
   late bool _includeProjectSettings; // 是否包含项目设置
   String _apiEndpoint = 'http://192.168.31.99:8207';
 
@@ -58,6 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _fontFamily = _settingsService.fontFamily;
     _fontSize = _settingsService.fontSize;
     _hideToolCalls = _settingsService.hideToolCalls;
+    _renderMarkdown = _settingsService.renderMarkdown;
 
     // 初始化项目设置开关
     List<String> currentSources = _settingsService.defaultSessionSettings?.settingSources ?? ['user'];
@@ -284,6 +286,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (value) {
                           setState(() => _hideToolCalls = value);
                           _settingsService.setHideToolCalls(value);
+                        },
+                        activeColor: primaryColor,
+                      ),
+                      Divider(height: 1, color: dividerColor),
+                      SwitchListTile(
+                        title: Text('渲染 Markdown', style: TextStyle(fontSize: 16, color: textPrimary)),
+                        subtitle: Text('在对话中渲染显示 Markdown 格式内容', style: TextStyle(fontSize: 13, color: appColors.textSecondary)),
+                        value: _renderMarkdown,
+                        onChanged: (value) {
+                          setState(() => _renderMarkdown = value);
+                          _settingsService.setRenderMarkdown(value);
                         },
                         activeColor: primaryColor,
                       ),
