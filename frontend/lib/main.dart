@@ -56,8 +56,8 @@ void main(List<String> args) async {
     exit(result.success ? 0 : 1);
   }
 
-  // Windows 平台在后台异步启动后端进程（不阻塞 UI）
-  if (!kIsWeb && Platform.isWindows) {
+  // 桌面平台在后台异步启动后端进程（不阻塞 UI）
+  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     _backendProcessService = BackendProcessService.getInstance();
     // 异步启动，不等待结果，让 UI 先显示
     _backendProcessService!.startBackend(showWindow: showBackendWindow).then((started) {
@@ -355,12 +355,18 @@ class _MyAppState extends State<MyApp> with WindowListener {
       _authService = await AuthService.getInstance();
       _configService = await ConfigService.getInstance();
 
-      // 修正配置中的无效地址（0.0.0.0 不能作为客户端连接地址）
+      // 修正配置中的无效地址（0.0.0.0 不能作为客户端连接地址，但保留端口）
       final currentUrl = _configService!.apiBaseUrl;
       if (currentUrl.contains('0.0.0.0')) {
-        print('DEBUG main: Fixing invalid API URL in config: $currentUrl');
-        await _configService!.setApiBaseUrl('http://127.0.0.1:8207', isAutoConfig: true);
-        print('DEBUG main: API URL fixed to: http://127.0.0.1:8207');
+        try {
+          final uri = Uri.parse(currentUrl);
+          final fixedUrl = 'http://127.0.0.1:${uri.port}';
+          print('DEBUG main: Fixing invalid API URL in config: $currentUrl -> $fixedUrl');
+          await _configService!.setApiBaseUrl(fixedUrl, isAutoConfig: true);
+        } catch (e) {
+          print('ERROR main: Failed to parse URL: $e, using default');
+          await _configService!.setApiBaseUrl('http://127.0.0.1:8207', isAutoConfig: true);
+        }
       }
 
       // 初始化标题栏颜色

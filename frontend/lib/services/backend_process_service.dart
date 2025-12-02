@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
 
-/// 后端进程管理服务（仅 Windows 平台）
+/// 后端进程管理服务（桌面平台：Windows/macOS/Linux）
 /// 负责在应用启动时自动启动后端，应用退出时自动关闭后端
 /// 支持多个前端实例共享一个后端，支持自定义端口（默认 8207）
 class BackendProcessService {
@@ -39,14 +39,14 @@ class BackendProcessService {
     return false;
   }
 
-  /// 启动后端进程（仅 Windows 平台）
-  /// [showWindow] 是否显示后端窗口（仅开发模式有效）
+  /// 启动后端进程（桌面平台：Windows/macOS/Linux）
+  /// [showWindow] 是否显示后端窗口（仅开发模式有效，仅 Windows 支持）
   /// [port] 后端端口，默认 8207
   /// 返回值：后端是否成功运行（包括复用已存在的后端）
   Future<bool> startBackend({bool showWindow = false, int? port}) async {
-    // 非 Windows 平台不支持
-    if (!Platform.isWindows) {
-      print('WARN BackendProcessService: Backend auto-start only supported on Windows');
+    // 仅桌面平台支持
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      print('WARN BackendProcessService: Backend auto-start only supported on desktop platforms');
       return false;
     }
 
@@ -90,7 +90,6 @@ class BackendProcessService {
         print('DEBUG BackendProcessService: Using esbuild-bundled backend.js');
       } else {
         // 开发模式：使用 npm run dev
-        // exe 路径：frontend/build/windows/x64/runner/Debug/cc_mobile.exe
         // 目标路径：backend/ts_backend
         // 需要返回到项目根目录（CodeAgentHub）
         final backendProjectDir = path.join(exeDir, '..', '..', '..', '..', '..', '..', 'backend', 'ts_backend');
@@ -102,16 +101,23 @@ class BackendProcessService {
         }
 
         workingDir = normalizedDir;
-        executable = 'cmd.exe';
 
-        if (showWindow) {
-          // 显示窗口：在新窗口中启动，方便查看日志
-          arguments = ['/c', 'start', '"CodeAgentHub Backend"', 'cmd', '/k', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
-          print('DEBUG BackendProcessService: Using npm run dev (visible window)');
+        if (Platform.isWindows) {
+          executable = 'cmd.exe';
+          if (showWindow) {
+            // 显示窗口：在新窗口中启动，方便查看日志
+            arguments = ['/c', 'start', '"CodeAgentHub Backend"', 'cmd', '/k', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
+            print('DEBUG BackendProcessService: Using npm run dev (visible window)');
+          } else {
+            // 隐藏窗口：使用 CREATE_NO_WINDOW 标志（通过 detached 模式实现）
+            arguments = ['/c', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
+            print('DEBUG BackendProcessService: Using npm run dev (hidden)');
+          }
         } else {
-          // 隐藏窗口：使用 CREATE_NO_WINDOW 标志（通过 detached 模式实现）
-          arguments = ['/c', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
-          print('DEBUG BackendProcessService: Using npm run dev (hidden)');
+          // macOS/Linux: 使用 sh
+          executable = '/bin/sh';
+          arguments = ['-c', 'PORT=$targetPort npm run dev'];
+          print('DEBUG BackendProcessService: Using npm run dev (Unix)');
         }
         print('DEBUG BackendProcessService: Backend directory: $normalizedDir');
       }
@@ -176,8 +182,8 @@ class BackendProcessService {
           _currentPort = targetPort;
 
           // 查找实际的后端进程 PID（通过端口）
-          if (Platform.isWindows) {
-            try {
+          try {
+            if (Platform.isWindows) {
               final result = await Process.run('powershell', [
                 '-Command',
                 '(Get-NetTCPConnection -LocalPort $targetPort -State Listen -ErrorAction SilentlyContinue).OwningProcess'
@@ -187,9 +193,17 @@ class BackendProcessService {
                 _backendPid = int.tryParse(output.split('\n').first.trim());
                 print('DEBUG BackendProcessService: Tracked backend PID: $_backendPid');
               }
-            } catch (e) {
-              print('WARN BackendProcessService: Failed to get backend PID: $e');
+            } else {
+              // macOS/Linux: 使用 lsof 查找监听端口的进程
+              final result = await Process.run('lsof', ['-ti', ':$targetPort']);
+              final output = result.stdout.toString().trim();
+              if (output.isNotEmpty) {
+                _backendPid = int.tryParse(output.split('\n').first.trim());
+                print('DEBUG BackendProcessService: Tracked backend PID: $_backendPid');
+              }
             }
+          } catch (e) {
+            print('WARN BackendProcessService: Failed to get backend PID: $e');
           }
 
           print('DEBUG BackendProcessService: Backend started successfully in ${elapsed}ms on port $targetPort');
@@ -210,11 +224,11 @@ class BackendProcessService {
     }
   }
 
-  /// 停止后端进程（只关闭我们启动的后端，仅 Windows 平台）
+  /// 停止后端进程（只关闭我们启动的后端，桌面平台）
   Future<void> stopBackend() async {
-    // 非 Windows 平台不支持
-    if (!Platform.isWindows) {
-      print('WARN BackendProcessService: Backend management only supported on Windows');
+    // 仅桌面平台支持
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      print('WARN BackendProcessService: Backend management only supported on desktop platforms');
       return;
     }
 
@@ -246,9 +260,15 @@ class BackendProcessService {
           await Process.run('taskkill', ['/F', '/T', '/PID', '${_backendProcess!.pid}']);
         }
       } else {
-        // Linux/Mac: 使用 SIGTERM
+        // macOS/Linux: 使用 kill 命令
+        print('DEBUG BackendProcessService: Killing our backend process $_backendPid');
+        final killResult = await Process.run('kill', ['$_backendPid']);
+        print('DEBUG BackendProcessService: kill result: ${killResult.stdout}');
+
+        // 同时尝试杀掉启动器进程（如果使用了 sh）
         if (_backendProcess != null) {
-          _backendProcess!.kill(ProcessSignal.sigterm);
+          print('DEBUG BackendProcessService: Also killing launcher process ${_backendProcess!.pid}');
+          await Process.run('kill', ['${_backendProcess!.pid}']);
         }
       }
 

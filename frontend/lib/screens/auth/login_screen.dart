@@ -124,8 +124,8 @@ class _LoginScreenState extends State<LoginScreen> {
         }
         _isLoading = false;
 
-        // 在 Windows 平台上，连接失败时显示启动后端按钮
-        if (!kIsWeb && Platform.isWindows) {
+        // 在桌面平台上，连接失败时显示启动后端按钮
+        if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
           final apiUrl = _apiUrlController.text.trim();
           // 检查是否是本地地址（127.0.0.1 或 localhost）
           if (apiUrl.contains('127.0.0.1') || apiUrl.contains('localhost')) {
