@@ -419,6 +419,12 @@ export function createApp(): express.Express {
     });
     next();
   });
+
+  // 健康检查端点 - 不需要认证，用于检测后端是否在运行
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   app.use(basicAuthMiddleware);
 
   app.get("/sessions", async (_req, res) => {

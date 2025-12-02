@@ -65,8 +65,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     List<String> currentSources = _settingsService.defaultSessionSettings?.settingSources ?? ['user'];
     _includeProjectSettings = currentSources.contains('project');
 
+    // Load API endpoint from config
+    _loadApiEndpoint();
+
     // Load global agent settings
     _loadGlobalSettings();
+  }
+
+  Future<void> _loadApiEndpoint() async {
+    try {
+      final configService = await ConfigService.getInstance();
+      setState(() {
+        _apiEndpoint = configService.apiBaseUrl;
+      });
+    } catch (e) {
+      print('ERROR SettingsScreen: Failed to load API endpoint: $e');
+    }
   }
 
   Future<void> _loadGlobalSettings() async {

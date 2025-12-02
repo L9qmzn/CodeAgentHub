@@ -8,6 +8,7 @@ class ConfigService {
   String _apiBaseUrl = 'http://127.0.0.1:8207'; // 默认值
   String _preferredBackend = 'claude_code'; // 默认使用 Claude Code
   bool _debugLogEnabled = false; // 默认关闭调试日志
+  bool _hasAutoConfigured = false; // 标记是否已经自动配置过（避免覆盖用户手动设置）
 
   ConfigService._();
 
@@ -42,10 +43,14 @@ class ConfigService {
   String get apiBaseUrl => _apiBaseUrl;
   String get preferredBackend => _preferredBackend;
   bool get debugLogEnabled => _debugLogEnabled;
+  bool get hasAutoConfigured => _hasAutoConfigured;
 
-  Future<void> setApiBaseUrl(String url) async {
-    print('DEBUG ConfigService: Setting API URL to: $url');
+  Future<void> setApiBaseUrl(String url, {bool isAutoConfig = false}) async {
+    print('DEBUG ConfigService: Setting API URL to: $url (auto: $isAutoConfig)');
     _apiBaseUrl = url;
+    if (isAutoConfig) {
+      _hasAutoConfigured = true;
+    }
     await _saveConfig();
     print('DEBUG ConfigService: API URL saved, current value: $_apiBaseUrl');
   }
@@ -81,9 +86,11 @@ class ConfigService {
         _apiBaseUrl = json['apiBaseUrl'] as String? ?? 'http://127.0.0.1:8207';
         _preferredBackend = json['preferredBackend'] as String? ?? 'claude_code';
         _debugLogEnabled = json['debugLogEnabled'] as bool? ?? false;
+        _hasAutoConfigured = json['hasAutoConfigured'] as bool? ?? false;
         print('DEBUG ConfigService: Loaded API URL: $_apiBaseUrl');
         print('DEBUG ConfigService: Loaded preferred backend: $_preferredBackend');
         print('DEBUG ConfigService: Loaded debug log enabled: $_debugLogEnabled');
+        print('DEBUG ConfigService: Loaded hasAutoConfigured: $_hasAutoConfigured');
       } else {
         print('DEBUG ConfigService: Config file does not exist at $filePath, using default');
         _apiBaseUrl = 'http://127.0.0.1:8207';
@@ -105,6 +112,7 @@ class ConfigService {
         'apiBaseUrl': _apiBaseUrl,
         'preferredBackend': _preferredBackend,
         'debugLogEnabled': _debugLogEnabled,
+        'hasAutoConfigured': _hasAutoConfigured,
       };
       final jsonString = jsonEncode(json);
       print('DEBUG ConfigService: Saving config: $jsonString to: $filePath');

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../config/app_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/config_service.dart';
+import '../../services/backend_process_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback? onLoginSuccess;
@@ -26,6 +29,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+  bool _isStartingBackend = false;
+  bool _showStartBackendButton = false;
 
   @override
   void initState() {
@@ -118,6 +123,68 @@ class _LoginScreenState extends State<LoginScreen> {
           _errorMessage = '登录失败: $e';
         }
         _isLoading = false;
+
+        // 在 Windows 平台上，连接失败时显示启动后端按钮
+        if (!kIsWeb && Platform.isWindows) {
+          final apiUrl = _apiUrlController.text.trim();
+          // 检查是否是本地地址（127.0.0.1 或 localhost）
+          if (apiUrl.contains('127.0.0.1') || apiUrl.contains('localhost')) {
+            _showStartBackendButton = true;
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _handleStartBackend() async {
+    setState(() {
+      _isStartingBackend = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // 从用户填写的 API URL 中解析端口
+      final apiUrl = _apiUrlController.text.trim();
+      int? port;
+      try {
+        final uri = Uri.parse(apiUrl);
+        port = uri.port;
+        // 如果 URL 没有显式指定端口，默认使用 8207
+        if (port == 0 || port == 80 || port == 443) {
+          port = 8207;
+        }
+      } catch (e) {
+        port = 8207; // 解析失败，使用默认端口
+      }
+
+      final backendService = BackendProcessService.getInstance();
+      final started = await backendService.startBackend(showWindow: false, port: port);
+
+      if (started) {
+        setState(() {
+          _isStartingBackend = false;
+          _showStartBackendButton = false;
+          _errorMessage = null;
+        });
+        // 后端启动成功，提示用户重试登录
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('后端服务已启动在端口 $port，请重新登录'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        setState(() {
+          _isStartingBackend = false;
+          _errorMessage = '后端启动失败，端口 $port 可能被占用';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isStartingBackend = false;
+        _errorMessage = '后端启动失败: $e';
       });
     }
   }
@@ -347,6 +414,41 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
+
+                  // Start Backend Button (Windows only, shown when connection fails)
+                  if (_showStartBackendButton) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: _isStartingBackend ? null : _handleStartBackend,
+                        icon: _isStartingBackend
+                            ? SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                                ),
+                              )
+                            : Icon(Icons.power_settings_new, color: primaryColor),
+                        label: Text(
+                          _isStartingBackend ? '正在启动...' : '启动本地后端',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: primaryColor,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: primaryColor, width: 2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

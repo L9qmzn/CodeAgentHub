@@ -106,3 +106,38 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# Copy backend files to build directory
+set(BACKEND_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../release/backend")
+set(BACKEND_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/backend")
+set(CONFIG_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../backend/ts_backend")
+
+# Create backend directory and copy all backend files
+install(CODE "
+  file(MAKE_DIRECTORY \"${BACKEND_INSTALL_DIR}\")
+
+  # Copy esbuild-bundled backend (backend.js + node_modules)
+  if(EXISTS \"${BACKEND_SOURCE_DIR}/backend.js\")
+    message(STATUS \"Copying esbuild-bundled backend from ${BACKEND_SOURCE_DIR}\")
+
+    # Copy backend.js
+    file(COPY \"${BACKEND_SOURCE_DIR}/backend.js\"
+         DESTINATION \"${BACKEND_INSTALL_DIR}\")
+
+    # Copy config.yaml
+    if(EXISTS \"${BACKEND_SOURCE_DIR}/config.yaml\")
+      file(COPY \"${BACKEND_SOURCE_DIR}/config.yaml\"
+           DESTINATION \"${BACKEND_INSTALL_DIR}\")
+    endif()
+
+    # Copy node_modules (better-sqlite3, bindings, file-uri-to-path)
+    if(EXISTS \"${BACKEND_SOURCE_DIR}/node_modules\")
+      file(COPY \"${BACKEND_SOURCE_DIR}/node_modules\"
+           DESTINATION \"${BACKEND_INSTALL_DIR}\")
+    endif()
+
+    message(STATUS \"✅ esbuild backend copied successfully\")
+  else()
+    message(WARNING \"No packaged backend found. Run 'npm run build:release' in backend/ts_backend first.\")
+  endif()
+  " COMPONENT Runtime)

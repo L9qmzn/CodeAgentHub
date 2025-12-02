@@ -1,7 +1,8 @@
-import 'dart:io' show Platform, exit;
+import 'dart:io' show Platform, exit, File;
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:path/path.dart' as path;
 import 'core/theme/app_theme.dart';
 import 'config/app_config.dart';
 import 'screens/tab_manager_screen.dart';
@@ -13,11 +14,15 @@ import 'services/config_service.dart';
 import 'services/app_settings_service.dart';
 import 'services/single_instance_service.dart';
 import 'services/windows_registry_service.dart';
+import 'services/backend_process_service.dart';
 import 'repositories/api_project_repository.dart';
 import 'repositories/api_codex_repository.dart';
+import 'core/constants/colors.dart';
 
 // 全局单实例服务
 SingleInstanceService? _singleInstanceService;
+// 全局后端进程服务
+BackendProcessService? _backendProcessService;
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +31,21 @@ void main(List<String> args) async {
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
   }
+
+  // 解析启动参数（必须在使用这些参数之前）
+  String? initialPath;
+  bool showBackendWindow = false;
+
+  for (int i = 0; i < args.length; i++) {
+    if (args[i] == '--path' && i + 1 < args.length) {
+      initialPath = args[i + 1];
+    } else if (args[i] == '--show-backend') {
+      showBackendWindow = true;
+    }
+  }
+
+  print('DEBUG main: Command line args: $args');
+  print('DEBUG main: Show backend window: $showBackendWindow');
 
   // 检查是否是以管理员身份运行来注册右键菜单
   if (Platform.isWindows && args.contains('--register-context-menu')) {
@@ -36,13 +56,19 @@ void main(List<String> args) async {
     exit(result.success ? 0 : 1);
   }
 
-  // 解析启动参数，查找文件夹路径
-  String? initialPath;
-  for (int i = 0; i < args.length; i++) {
-    if (args[i] == '--path' && i + 1 < args.length) {
-      initialPath = args[i + 1];
-      break;
-    }
+  // Windows 平台在后台异步启动后端进程（不阻塞 UI）
+  if (!kIsWeb && Platform.isWindows) {
+    _backendProcessService = BackendProcessService.getInstance();
+    // 异步启动，不等待结果，让 UI 先显示
+    _backendProcessService!.startBackend(showWindow: showBackendWindow).then((started) {
+      if (started) {
+        print('DEBUG main: Backend process started/detected successfully');
+      } else {
+        print('WARN main: Backend not started, user can manually start from login page');
+      }
+    }).catchError((e) {
+      print('ERROR main: Failed to start backend: $e');
+    });
   }
 
   // 只在桌面平台的 Release 模式使用单实例功能
@@ -69,24 +95,27 @@ void main(List<String> args) async {
   runApp(MyApp(
     initialPath: initialPath,
     singleInstanceService: _singleInstanceService,
+    backendProcessService: _backendProcessService,
   ));
 }
 
 class MyApp extends StatefulWidget {
   final String? initialPath;
   final SingleInstanceService? singleInstanceService;
+  final BackendProcessService? backendProcessService;
 
   const MyApp({
     super.key,
     this.initialPath,
     this.singleInstanceService,
+    this.backendProcessService,
   });
 
   @override
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WindowListener {
   AuthService? _authService;
   ConfigService? _configService;
   final _settingsService = AppSettingsService();
@@ -102,17 +131,201 @@ class _MyAppState extends State<MyApp> {
   // 标记是否需要显示管理员权限对话框（延迟到 MaterialApp 准备好后显示）
   bool _pendingAdminDialog = false;
 
+  // 后端启动状态信息（用于显示启动提示）
+  String? _backendStatusMessage;
+  bool? _backendStartSuccess;
+
   @override
   void initState() {
     super.initState();
     _settingsService.addListener(_onSettingsChanged);
+    _checkBackendStatus();
     _initializeServices();
+
+    // 注册窗口关闭监听器（仅桌面平台）
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      windowManager.addListener(this);
+    }
+  }
+
+  /// 检查后端启动状态并准备提示消息
+  Future<void> _checkBackendStatus() async {
+    if (widget.backendProcessService != null) {
+      final backendUrl = widget.backendProcessService!.backendUrl;
+      final backendPort = widget.backendProcessService!.backendPort;
+
+      if (widget.backendProcessService!.isRunning) {
+        _backendStatusMessage = '后端服务运行中\n地址: $backendUrl\n端口: $backendPort';
+        _backendStartSuccess = true;
+      } else {
+        _backendStatusMessage = '后端服务启动失败\n端口 $backendPort 可能被其他程序占用\n或后端程序不存在';
+        _backendStartSuccess = false;
+      }
+
+      // 延迟显示提示，等待 UI 完全加载
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        _showBackendStatusNotification();
+      });
+    }
+  }
+
+  /// 显示后端启动状态的通知（使用 SnackBar，仅失败时显示）
+  void _showBackendStatusNotification() {
+    if (!mounted || _backendStatusMessage == null) return;
+
+    // 成功时不显示提示（因为会自动连接）
+    if (_backendStartSuccess == true) {
+      return;
+    }
+
+    // 只有失败时才显示 SnackBar 提示
+    final navigatorContext = _navigatorKey.currentContext;
+    if (navigatorContext == null) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _showBackendStatusNotification();
+      });
+      return;
+    }
+
+    ScaffoldMessenger.of(navigatorContext).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _backendStatusMessage!,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 6),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        action: SnackBarAction(
+          label: '知道了',
+          textColor: Colors.white,
+          onPressed: () {},
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _settingsService.removeListener(_onSettingsChanged);
+    // 移除窗口关闭监听器
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      windowManager.removeListener(this);
+    }
     super.dispose();
+  }
+
+  /// 窗口关闭事件（WindowListener 接口）
+  @override
+  Future<void> onWindowClose() async {
+    print('DEBUG main: onWindowClose triggered');
+
+    // 询问用户是否关闭后端
+    bool? shouldStopBackend;
+    if (widget.backendProcessService != null && widget.backendProcessService!.isRunning) {
+      final navigatorContext = _navigatorKey.currentContext;
+      if (navigatorContext != null && mounted) {
+        shouldStopBackend = await _showBackendCloseDialog(navigatorContext);
+      }
+    }
+
+    // 处理后端停止（如果用户选择关闭）
+    if (shouldStopBackend == true && widget.backendProcessService != null) {
+      // 显示"正在关闭后端"的加载对话框
+      final navigatorContext = _navigatorKey.currentContext;
+      if (navigatorContext != null && mounted) {
+        _showStoppingBackendDialog(navigatorContext);
+      }
+
+      print('DEBUG main: Stopping backend, please wait...');
+      // 等待后端完全停止
+      await widget.backendProcessService!.stopBackend();
+      print('DEBUG main: Backend stopped');
+    }
+
+    // 取消阻止关闭，然后立即退出
+    print('DEBUG main: Exiting application');
+    await windowManager.setPreventClose(false);
+    exit(0);
+  }
+
+  /// 显示"正在关闭后端"的加载对话框
+  void _showStoppingBackendDialog(BuildContext context) {
+    final appColors = context.appColors;
+    final textPrimary = Theme.of(context).textTheme.bodyLarge!.color!;
+    final cardColor = Theme.of(context).cardColor;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: cardColor,
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              const SizedBox(width: 20),
+              Text(
+                '正在关闭后端服务...',
+                style: TextStyle(color: textPrimary, fontSize: 15),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 显示关闭后端确认对话框
+  Future<bool?> _showBackendCloseDialog(BuildContext context) async {
+    final appColors = context.appColors;
+    final textPrimary = Theme.of(context).textTheme.bodyLarge!.color!;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final cardColor = Theme.of(context).cardColor;
+
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: cardColor,
+        title: Text('关闭后端服务？', style: TextStyle(color: textPrimary)),
+        content: Text(
+          '应用即将关闭，是否同时关闭后端服务？\n\n'
+          '• 关闭：停止后端服务\n'
+          '• 保持运行：后端继续运行，下次打开时可直接使用',
+          style: TextStyle(color: appColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, false);
+            },
+            child: Text('保持运行', style: TextStyle(color: appColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, true);
+            },
+            child: Text('关闭', style: TextStyle(color: primaryColor)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onSettingsChanged() {
@@ -142,8 +355,22 @@ class _MyAppState extends State<MyApp> {
       _authService = await AuthService.getInstance();
       _configService = await ConfigService.getInstance();
 
+      // 修正配置中的无效地址（0.0.0.0 不能作为客户端连接地址）
+      final currentUrl = _configService!.apiBaseUrl;
+      if (currentUrl.contains('0.0.0.0')) {
+        print('DEBUG main: Fixing invalid API URL in config: $currentUrl');
+        await _configService!.setApiBaseUrl('http://127.0.0.1:8207', isAutoConfig: true);
+        print('DEBUG main: API URL fixed to: http://127.0.0.1:8207');
+      }
+
       // 初始化标题栏颜色
       await _updateWindowTitleBarColor();
+
+      // 设置窗口关闭前拦截（仅桌面平台）
+      if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        await windowManager.setPreventClose(true);
+        print('DEBUG main: Window close prevention enabled');
+      }
 
       // Windows: 检查并注册右键菜单
       // 在 Release 模式下自动执行，Debug 模式下也执行以便测试
