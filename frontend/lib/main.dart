@@ -134,11 +134,19 @@ class _MyAppState extends State<MyApp> with WindowListener {
   // 后端启动状态信息（用于显示启动提示）
   String? _backendStatusMessage;
   bool? _backendStartSuccess;
+  bool _backendStarting = false; // 后端正在启动中
+  int _refreshKey = 0; // 用于强制刷新界面
 
   @override
   void initState() {
     super.initState();
     _settingsService.addListener(_onSettingsChanged);
+
+    // 如果有后端服务，立即标记为启动中（确保第一帧就显示正确状态）
+    if (widget.backendProcessService != null) {
+      _backendStarting = true;
+    }
+
     _checkBackendStatus();
     _initializeServices();
 
@@ -150,35 +158,66 @@ class _MyAppState extends State<MyApp> with WindowListener {
 
   /// 检查后端启动状态并准备提示消息
   Future<void> _checkBackendStatus() async {
-    if (widget.backendProcessService != null) {
-      final backendUrl = widget.backendProcessService!.backendUrl;
-      final backendPort = widget.backendProcessService!.backendPort;
+    if (widget.backendProcessService == null) return;
 
+    // _backendStarting 已在 initState 中同步设置，此处不需要再 setState
+
+    final backendPort = widget.backendProcessService!.backendPort;
+
+    // 轮询等待后端启动完成（最多 12 秒）
+    const maxWaitTime = Duration(seconds: 12);
+    const checkInterval = Duration(milliseconds: 500);
+    final startTime = DateTime.now();
+
+    while (DateTime.now().difference(startTime) < maxWaitTime) {
+      if (!mounted) return;
+
+      // 检查后端是否已经启动
       if (widget.backendProcessService!.isRunning) {
-        _backendStatusMessage = '后端服务运行中\n地址: $backendUrl\n端口: $backendPort';
-        _backendStartSuccess = true;
-      } else {
-        _backendStatusMessage = '后端服务启动失败\n端口 $backendPort 可能被其他程序占用\n或后端程序不存在';
-        _backendStartSuccess = false;
+        // 后端启动成功
+        if (mounted) {
+          setState(() {
+            _backendStarting = false;
+            _backendStartSuccess = true;
+            _refreshKey++; // 增加刷新计数，触发界面重建
+          });
+
+          // 等待一小段时间，让界面完成初始化
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) {
+              setState(() {
+                // 再次触发重建，确保数据已加载
+              });
+            }
+          });
+        }
+        return;
       }
 
-      // 延迟显示提示，等待 UI 完全加载
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        _showBackendStatusNotification();
+      await Future.delayed(checkInterval);
+    }
+
+    // 超时，后端启动失败
+    if (mounted) {
+      setState(() {
+        _backendStarting = false;
+        _backendStatusMessage = '后端服务启动失败\n端口 $backendPort 可能被占用\n您可以在登录页手动启动';
+        _backendStartSuccess = false;
+      });
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _showBackendStatusNotification();
       });
     }
   }
 
-  /// 显示后端启动状态的通知（使用 SnackBar，仅失败时显示）
+  /// 显示后端启动失败的通知（使用 SnackBar，仅失败时调用）
   void _showBackendStatusNotification() {
     if (!mounted || _backendStatusMessage == null) return;
 
-    // 成功时不显示提示（因为会自动连接）
-    if (_backendStartSuccess == true) {
-      return;
-    }
+    // 只在失败时显示提示
+    if (_backendStartSuccess == true) return;
 
-    // 只有失败时才显示 SnackBar 提示
     final navigatorContext = _navigatorKey.currentContext;
     if (navigatorContext == null) {
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -571,8 +610,31 @@ class _MyAppState extends State<MyApp> with WindowListener {
       },
       home: _isInitializing
           ? Scaffold(
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
               body: Center(
-                child: CircularProgressIndicator(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    const SizedBox(height: 24),
+                    if (_backendStarting)
+                      Text(
+                        '正在启动后端服务...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
+                      )
+                    else
+                      Text(
+                        '正在初始化...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             )
           : _authService?.isLoggedIn == true
@@ -611,6 +673,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
     final codexRepository = ApiCodexRepository(_codexApiService!);
 
     return TabManagerScreen(
+      key: ValueKey(_refreshKey), // 使用 key 强制重建
       claudeRepository: claudeRepository,
       codexRepository: codexRepository,
       initialPath: widget.initialPath,
