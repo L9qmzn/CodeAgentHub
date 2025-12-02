@@ -34,18 +34,14 @@ void main(List<String> args) async {
 
   // 解析启动参数（必须在使用这些参数之前）
   String? initialPath;
-  bool showBackendWindow = false;
 
   for (int i = 0; i < args.length; i++) {
     if (args[i] == '--path' && i + 1 < args.length) {
       initialPath = args[i + 1];
-    } else if (args[i] == '--show-backend') {
-      showBackendWindow = true;
     }
   }
 
   print('DEBUG main: Command line args: $args');
-  print('DEBUG main: Show backend window: $showBackendWindow');
 
   // 检查是否是以管理员身份运行来注册右键菜单
   if (Platform.isWindows && args.contains('--register-context-menu')) {
@@ -60,7 +56,8 @@ void main(List<String> args) async {
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     _backendProcessService = BackendProcessService.getInstance();
     // 异步启动，不等待结果，让 UI 先显示
-    _backendProcessService!.startBackend(showWindow: showBackendWindow).then((started) {
+    // 后端窗口始终隐藏，调试请使用 start_backend_debug.bat
+    _backendProcessService!.startBackend().then((started) {
       if (started) {
         print('DEBUG main: Backend process started/detected successfully');
       } else {

@@ -21,6 +21,21 @@ class BackendProcessService {
     return _instance!;
   }
 
+  /// 检查 Node.js 是否已安装并在 PATH 中
+  Future<bool> _checkNodeInstalled() async {
+    try {
+      final result = await Process.run('node', ['--version']);
+      if (result.exitCode == 0) {
+        final version = result.stdout.toString().trim();
+        print('DEBUG BackendProcessService: Node.js found: $version');
+        return true;
+      }
+    } catch (e) {
+      print('DEBUG BackendProcessService: Node.js check failed: $e');
+    }
+    return false;
+  }
+
   /// 检查指定端口是否有我们的后端在运行
   Future<bool> _isOurBackendRunning(int port) async {
     try {
@@ -40,10 +55,10 @@ class BackendProcessService {
   }
 
   /// 启动后端进程（桌面平台：Windows/macOS/Linux）
-  /// [showWindow] 是否显示后端窗口（仅开发模式有效，仅 Windows 支持）
   /// [port] 后端端口，默认 8207
   /// 返回值：后端是否成功运行（包括复用已存在的后端）
-  Future<bool> startBackend({bool showWindow = false, int? port}) async {
+  /// 注意：后端窗口始终隐藏，如需调试请使用 start_backend_debug.bat
+  Future<bool> startBackend({int? port}) async {
     // 仅桌面平台支持
     if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
       print('WARN BackendProcessService: Backend auto-start only supported on desktop platforms');
@@ -100,6 +115,16 @@ class BackendProcessService {
       print('DEBUG BackendProcessService: Current exe: $exePath');
       print('DEBUG BackendProcessService: Backend JS path: $backendJsPath');
 
+      // 如果是打包模式，检查 Node.js 是否安装
+      if (await File(backendJsPath).exists()) {
+        final nodeCheck = await _checkNodeInstalled();
+        if (!nodeCheck) {
+          print('ERROR BackendProcessService: Node.js not found in PATH');
+          print('ERROR BackendProcessService: Please install Node.js from https://nodejs.org/');
+          return false;
+        }
+      }
+
       String executable;
       List<String> arguments;
       String workingDir;
@@ -107,10 +132,22 @@ class BackendProcessService {
       // 使用 esbuild 打包的 backend.js
       if (await File(backendJsPath).exists()) {
         final backendDir = path.join(exeDir, 'backend');
-        executable = 'node';
-        arguments = ['backend.js', '--port', '$targetPort'];
         workingDir = backendDir;
-        print('DEBUG BackendProcessService: Using esbuild-bundled backend.js');
+
+        // 打包模式：使用预加载脚本隐藏所有子进程窗口
+        executable = 'node';
+
+        // 检查预加载脚本是否存在
+        final preloadScript = path.join(backendDir, 'hide-windows-preload.js');
+        if (Platform.isWindows && await File(preloadScript).exists()) {
+          // Windows: 使用预加载脚本（使用绝对路径）
+          arguments = ['--require', preloadScript, 'backend.js', '--port', '$targetPort'];
+          print('DEBUG BackendProcessService: Using backend.js with Windows hide preload: $preloadScript');
+        } else {
+          // 非 Windows 或预加载脚本不存在
+          arguments = ['backend.js', '--port', '$targetPort'];
+          print('DEBUG BackendProcessService: Using backend.js without preload (script exists: ${await File(preloadScript).exists()})');
+        }
       } else {
         // 开发模式：使用 npm run dev
         // 目标路径：backend/ts_backend
@@ -125,17 +162,11 @@ class BackendProcessService {
 
         workingDir = normalizedDir;
 
+        // 开发模式：窗口始终隐藏
         if (Platform.isWindows) {
           executable = 'cmd.exe';
-          if (showWindow) {
-            // 显示窗口：在新窗口中启动，方便查看日志
-            arguments = ['/c', 'start', '"CodeAgentHub Backend"', 'cmd', '/k', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
-            print('DEBUG BackendProcessService: Using npm run dev (visible window)');
-          } else {
-            // 隐藏窗口：使用 CREATE_NO_WINDOW 标志（通过 detached 模式实现）
-            arguments = ['/c', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
-            print('DEBUG BackendProcessService: Using npm run dev (hidden)');
-          }
+          arguments = ['/c', 'set', 'PORT=$targetPort', '&&', 'npm', 'run', 'dev'];
+          print('DEBUG BackendProcessService: Using npm run dev (hidden window)');
         } else {
           // macOS/Linux: 使用 sh
           executable = '/bin/sh';

@@ -158,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final backendService = BackendProcessService.getInstance();
-      final started = await backendService.startBackend(showWindow: false, port: port);
+      final started = await backendService.startBackend(port: port);
 
       if (started) {
         setState(() {
@@ -176,9 +176,22 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } else {
+        // 检查是否是 Node.js 未安装导致的失败
+        String errorMsg = '后端启动失败';
+        try {
+          final nodeCheck = await Process.run('node', ['--version']);
+          if (nodeCheck.exitCode != 0) {
+            errorMsg = '后端启动失败：Node.js 未安装\n请从 https://nodejs.org/ 下载并安装 Node.js';
+          } else {
+            errorMsg = '后端启动失败，端口 $port 可能被占用';
+          }
+        } catch (e) {
+          errorMsg = '后端启动失败：Node.js 未安装\n请从 https://nodejs.org/ 下载并安装 Node.js';
+        }
+
         setState(() {
           _isStartingBackend = false;
-          _errorMessage = '后端启动失败，端口 $port 可能被占用';
+          _errorMessage = errorMsg;
         });
       }
     } catch (e) {
