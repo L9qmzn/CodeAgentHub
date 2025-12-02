@@ -135,7 +135,6 @@ class _MyAppState extends State<MyApp> with WindowListener {
   String? _backendStatusMessage;
   bool? _backendStartSuccess;
   bool _backendStarting = false; // 后端正在启动中
-  int _refreshKey = 0; // 用于强制刷新界面
 
   @override
   void initState() {
@@ -147,7 +146,6 @@ class _MyAppState extends State<MyApp> with WindowListener {
       _backendStarting = true;
     }
 
-    _checkBackendStatus();
     _initializeServices();
 
     // 注册窗口关闭监听器（仅桌面平台）
@@ -159,8 +157,6 @@ class _MyAppState extends State<MyApp> with WindowListener {
   /// 检查后端启动状态并准备提示消息
   Future<void> _checkBackendStatus() async {
     if (widget.backendProcessService == null) return;
-
-    // _backendStarting 已在 initState 中同步设置，此处不需要再 setState
 
     final backendPort = widget.backendProcessService!.backendPort;
 
@@ -174,23 +170,17 @@ class _MyAppState extends State<MyApp> with WindowListener {
 
       // 检查后端是否已经启动
       if (widget.backendProcessService!.isRunning) {
-        // 后端启动成功
+        // 后端启动成功，额外等待一小段时间确保后端完全准备好
+        print('DEBUG main: Backend health check passed, waiting for full initialization...');
+        await Future.delayed(const Duration(milliseconds: 800));
+
         if (mounted) {
           setState(() {
             _backendStarting = false;
             _backendStartSuccess = true;
-            _refreshKey++; // 增加刷新计数，触发界面重建
-          });
-
-          // 等待一小段时间，让界面完成初始化
-          Future.delayed(const Duration(milliseconds: 300), () {
-            if (mounted) {
-              setState(() {
-                // 再次触发重建，确保数据已加载
-              });
-            }
           });
         }
+        print('DEBUG main: Backend is ready, continuing initialization');
         return;
       }
 
@@ -205,6 +195,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
         _backendStartSuccess = false;
       });
 
+      // 延迟显示通知，确保 UI 准备好
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) _showBackendStatusNotification();
       });
@@ -424,6 +415,9 @@ class _MyAppState extends State<MyApp> with WindowListener {
         // 使用 await 确保能正确捕获错误
         await _checkAndRegisterContextMenu();
       }
+
+      // 等待后端启动完成（如果有后端服务）
+      await _checkBackendStatus();
     } catch (e) {
       print('Error initializing services: $e');
     }
@@ -585,6 +579,67 @@ class _MyAppState extends State<MyApp> with WindowListener {
     });
   }
 
+  Widget _buildLoadingScreen() {
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        final primaryColor = colorScheme.primary;
+        final textPrimary = colorScheme.onSurface;
+        final textSecondary = colorScheme.onSurface.withOpacity(0.6);
+        final backgroundColor = theme.scaffoldBackgroundColor;
+
+        return Scaffold(
+          backgroundColor: backgroundColor,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 应用图标
+                Icon(
+                  Icons.hub_outlined,
+                  size: 80,
+                  color: primaryColor,
+                ),
+                const SizedBox(height: 24),
+                // 应用名称
+                Text(
+                  'CodeAgent Hub',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                // 加载指示器
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // 状态文本
+                Text(
+                  _backendStarting ? '正在启动后端服务...' : '正在初始化...',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // 使用AppTheme.generate生成动态主题
@@ -609,34 +664,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
         );
       },
       home: _isInitializing
-          ? Scaffold(
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    const SizedBox(height: 24),
-                    if (_backendStarting)
-                      Text(
-                        '正在启动后端服务...',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      )
-                    else
-                      Text(
-                        '正在初始化...',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            )
+          ? _buildLoadingScreen()
           : _authService?.isLoggedIn == true
               ? _buildMainApp()
               : _buildLoginPrompt(),
@@ -673,7 +701,6 @@ class _MyAppState extends State<MyApp> with WindowListener {
     final codexRepository = ApiCodexRepository(_codexApiService!);
 
     return TabManagerScreen(
-      key: ValueKey(_refreshKey), // 使用 key 强制重建
       claudeRepository: claudeRepository,
       codexRepository: codexRepository,
       initialPath: widget.initialPath,

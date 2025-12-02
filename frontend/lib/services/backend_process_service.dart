@@ -61,8 +61,31 @@ class BackendProcessService {
     if (await _isOurBackendRunning(targetPort)) {
       _isBackendRunning = true;
       _currentPort = targetPort;
-      _backendPid = null; // 不是我们启动的，不记录 PID
-      print('DEBUG BackendProcessService: Reusing existing backend on port $targetPort (not owned)');
+
+      // 即使不是我们启动的，也记录 PID，以便用户选择关闭时能够关闭
+      try {
+        if (Platform.isWindows) {
+          final result = await Process.run('powershell', [
+            '-Command',
+            '(Get-NetTCPConnection -LocalPort $targetPort -State Listen -ErrorAction SilentlyContinue).OwningProcess'
+          ]);
+          final output = result.stdout.toString().trim();
+          if (output.isNotEmpty) {
+            _backendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Reusing existing backend on port $targetPort with PID $_backendPid');
+          }
+        } else {
+          final result = await Process.run('lsof', ['-ti', ':$targetPort']);
+          final output = result.stdout.toString().trim();
+          if (output.isNotEmpty) {
+            _backendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Reusing existing backend on port $targetPort with PID $_backendPid');
+          }
+        }
+      } catch (e) {
+        print('WARN BackendProcessService: Failed to get PID of existing backend: $e');
+      }
+
       return true;
     }
 
@@ -237,38 +260,81 @@ class BackendProcessService {
       return;
     }
 
-    // 如果后端不是我们启动的（_backendPid 为 null），则不关闭
+    // 如果 _backendPid 为 null，尝试通过端口查找 PID
     if (_backendPid == null) {
-      print('DEBUG BackendProcessService: Backend is not owned by this instance, skipping shutdown');
-      _isBackendRunning = false;
-      _backendProcess = null;
-      return;
+      print('DEBUG BackendProcessService: PID not recorded, trying to find by port $_currentPort');
+      try {
+        if (Platform.isWindows) {
+          final result = await Process.run('powershell', [
+            '-Command',
+            '(Get-NetTCPConnection -LocalPort $_currentPort -State Listen -ErrorAction SilentlyContinue).OwningProcess'
+          ]);
+          final output = result.stdout.toString().trim();
+          if (output.isNotEmpty) {
+            _backendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Found backend PID: $_backendPid');
+          }
+        } else {
+          final result = await Process.run('lsof', ['-ti', ':$_currentPort']);
+          final output = result.stdout.toString().trim();
+          if (output.isNotEmpty) {
+            _backendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Found backend PID: $_backendPid');
+          }
+        }
+      } catch (e) {
+        print('WARN BackendProcessService: Failed to find backend PID: $e');
+      }
+
+      // 如果还是找不到 PID，放弃关闭
+      if (_backendPid == null) {
+        print('WARN BackendProcessService: Cannot find backend PID, skipping shutdown');
+        _isBackendRunning = false;
+        _backendProcess = null;
+        return;
+      }
     }
 
     try {
       print('DEBUG BackendProcessService: Stopping backend with PID $_backendPid...');
 
       if (Platform.isWindows) {
-        // Windows: 只关闭我们记录的 PID
-        print('DEBUG BackendProcessService: Killing our backend process $_backendPid');
-        final killResult = await Process.run('taskkill', ['/F', '/PID', '$_backendPid']);
-        print('DEBUG BackendProcessService: taskkill result: ${killResult.stdout}');
+        // Windows: 关闭后端进程（node.exe 或 npm）
+        print('DEBUG BackendProcessService: Killing backend process $_backendPid');
+        final killResult = await Process.run('taskkill', ['/F', '/T', '/PID', '$_backendPid']);
+        print('DEBUG BackendProcessService: taskkill stdout: ${killResult.stdout}');
+        if (killResult.stderr.toString().isNotEmpty) {
+          print('DEBUG BackendProcessService: taskkill stderr: ${killResult.stderr}');
+        }
+        print('DEBUG BackendProcessService: taskkill exit code: ${killResult.exitCode}');
 
-        // 同时尝试杀掉启动器进程树（如果使用了 cmd.exe）
-        if (_backendProcess != null) {
-          print('DEBUG BackendProcessService: Also killing launcher process ${_backendProcess!.pid}');
-          await Process.run('taskkill', ['/F', '/T', '/PID', '${_backendProcess!.pid}']);
+        // 等待一小段时间确保进程完全关闭
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        // 验证进程是否已关闭
+        final checkResult = await Process.run('tasklist', ['/FI', 'PID eq $_backendPid']);
+        final isStillRunning = checkResult.stdout.toString().contains('$_backendPid');
+        if (isStillRunning) {
+          print('WARN BackendProcessService: Process $_backendPid still running after taskkill');
+        } else {
+          print('DEBUG BackendProcessService: Process $_backendPid confirmed stopped');
         }
       } else {
         // macOS/Linux: 使用 kill 命令
-        print('DEBUG BackendProcessService: Killing our backend process $_backendPid');
-        final killResult = await Process.run('kill', ['$_backendPid']);
-        print('DEBUG BackendProcessService: kill result: ${killResult.stdout}');
+        print('DEBUG BackendProcessService: Killing backend process $_backendPid');
+        // 先尝试 SIGTERM (graceful shutdown)
+        await Process.run('kill', ['$_backendPid']);
 
-        // 同时尝试杀掉启动器进程（如果使用了 sh）
-        if (_backendProcess != null) {
-          print('DEBUG BackendProcessService: Also killing launcher process ${_backendProcess!.pid}');
-          await Process.run('kill', ['${_backendProcess!.pid}']);
+        // 等待 500ms
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // 检查是否还在运行，如果是则强制 SIGKILL
+        final checkResult = await Process.run('ps', ['-p', '$_backendPid']);
+        if (checkResult.exitCode == 0) {
+          print('DEBUG BackendProcessService: Process still running, sending SIGKILL');
+          await Process.run('kill', ['-9', '$_backendPid']);
+        } else {
+          print('DEBUG BackendProcessService: Process $_backendPid confirmed stopped');
         }
       }
 
