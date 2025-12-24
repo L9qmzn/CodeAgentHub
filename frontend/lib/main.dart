@@ -15,6 +15,7 @@ import 'services/app_settings_service.dart';
 import 'services/single_instance_service.dart';
 import 'services/windows_registry_service.dart';
 import 'services/backend_process_service.dart';
+import 'services/shared_project_data_service.dart';
 import 'repositories/api_project_repository.dart';
 import 'repositories/api_codex_repository.dart';
 import 'core/constants/colors.dart';
@@ -244,12 +245,25 @@ class _MyAppState extends State<MyApp> with WindowListener {
 
   @override
   void dispose() {
+    print('DEBUG main: Disposing resources');
+
+    // 停止并释放共享项目数据服务的定时器
+    try {
+      SharedProjectDataService.instance.dispose();
+      print('DEBUG main: SharedProjectDataService disposed');
+    } catch (e) {
+      print('DEBUG main: Error disposing SharedProjectDataService: $e');
+    }
+
     _settingsService.removeListener(_onSettingsChanged);
+
     // 移除窗口关闭监听器
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       windowManager.removeListener(this);
     }
+
     super.dispose();
+    print('DEBUG main: Dispose completed');
   }
 
   /// 窗口关闭事件（WindowListener 接口）
@@ -278,11 +292,42 @@ class _MyAppState extends State<MyApp> with WindowListener {
       // 等待后端完全停止
       await widget.backendProcessService!.stopBackend();
       print('DEBUG main: Backend stopped');
+
+      // 额外等待，确保进程完全终止
+      await Future.delayed(const Duration(milliseconds: 500));
+    } else if (shouldStopBackend == false) {
+      print('DEBUG main: User chose to keep backend running');
+    } else if (shouldStopBackend == null) {
+      print('DEBUG main: No backend running or service not available');
+    }
+
+    // 在退出之前手动释放资源（因为 exit(0) 不会触发 dispose）
+    print('DEBUG main: Manually disposing resources before exit');
+
+    // 停止并释放共享项目数据服务的定时器
+    try {
+      SharedProjectDataService.instance.dispose();
+      print('DEBUG main: SharedProjectDataService disposed');
+    } catch (e) {
+      print('DEBUG main: Error disposing SharedProjectDataService: $e');
+    }
+
+    // 移除设置服务监听器
+    _settingsService.removeListener(_onSettingsChanged);
+
+    // 移除窗口关闭监听器
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      windowManager.removeListener(this);
     }
 
     // 取消阻止关闭，然后立即退出
     print('DEBUG main: Exiting application');
     await windowManager.setPreventClose(false);
+
+    // 给系统一点时间清理资源
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 使用 exit(0) 退出应用
     exit(0);
   }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../core/theme/app_theme.dart';
 
@@ -204,6 +205,18 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
         ],
       ),
     );
+  }
+
+  // 打开链接
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        debugPrint('无法打开链接: $url, 错误: $e');
+      }
+    }
   }
 
   // 创建统一的 Markdown 样式表
@@ -416,6 +429,9 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
         selectable: false, // 外层已有 SelectionArea
         styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
         imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
+        onTapLink: (text, href, title) {
+          if (href != null) _launchUrl(href);
+        },
       ),
     );
   }
@@ -437,6 +453,9 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
                 selectable: false,
                 styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
                 imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
+                onTapLink: (text, href, title) {
+                  if (href != null) _launchUrl(href);
+                },
               ),
             ),
           );
@@ -465,6 +484,9 @@ class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveCl
               selectable: false,
               styleSheet: _getMarkdownStyleSheet(textPrimary, appColors),
               imageBuilder: (uri, title, alt) => _safeImageBuilder(uri, title, alt, appColors),
+              onTapLink: (text, href, title) {
+                if (href != null) _launchUrl(href);
+              },
             ),
           ),
         );

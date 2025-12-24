@@ -79,14 +79,42 @@ class AuthService {
             _loginTime = loginTime;
             print('DEBUG AuthService: Session valid, auto-login successful');
           } else {
-            print('DEBUG AuthService: Session expired, need re-login');
+            // 会话过期，清除内存中的密码和登录时间，保留用户名用于自动填充
+            _password = null;
+            _loginTime = null;
+            print('DEBUG AuthService: Session expired, clearing credentials from file');
+
+            // 重要：同时清除文件中的过期密码，避免下次加载时误判
+            await _clearPasswordFromFile(filePath, _username ?? '');
           }
+        } else {
+          // 没有密码或登录时间，说明未登录或已登出
+          _password = null;
+          _loginTime = null;
         }
 
         print('DEBUG AuthService: Loaded credentials from: $filePath');
+        print('DEBUG AuthService: isLoggedIn=${_username != null && _password != null}');
       }
     } catch (e) {
       print('Error loading credentials: $e');
+    }
+  }
+
+  /// 清除文件中的密码（保留用户名用于自动填充）
+  Future<void> _clearPasswordFromFile(String filePath, String username) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) {
+        final data = <String, dynamic>{
+          'username': username,
+          // 不保存 password 和 login_time
+        };
+        await file.writeAsString(json.encode(data));
+        print('DEBUG AuthService: Cleared expired password from file');
+      }
+    } catch (e) {
+      print('DEBUG AuthService: Failed to clear password from file: $e');
     }
   }
 

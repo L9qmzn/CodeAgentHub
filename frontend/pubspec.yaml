@@ -67,6 +67,15 @@ dependencies:
   # FFI for Windows API calls (UAC elevation)
   ffi: ^2.1.0
 
+  # Speech to text for voice input (Windows/Android/iOS/macOS)
+  speech_to_text: ^6.6.2
+
+  # URL launcher for opening links in browser
+  url_launcher: ^6.2.5
+
+  # Permission handler for runtime permissions (Android/iOS)
+  permission_handler: ^11.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

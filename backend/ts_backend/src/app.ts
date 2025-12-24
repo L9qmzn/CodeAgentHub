@@ -680,10 +680,8 @@ export function createApp(): express.Express {
       ? body.message
       : body.message.find(block => block.type === "text")?.text || "New session with image";
 
-    // Determine session key for tracking active sessions
-    const sessionKey = body.session_id || `temp_${generateRunId()}`;
-
     // Check if there's already an active session for this session_id
+    // If so, inject the message into the existing stream (for continuous conversation)
     const activeSession = body.session_id ? activeSessions.get(body.session_id) : null;
 
     if (activeSession) {
@@ -725,8 +723,15 @@ export function createApp(): express.Express {
         // eslint-disable-next-line no-console
         console.log(`[Claude] Message pushed to stream for session ${body.session_id}`);
 
-        // Note: We cannot cancel the timeout here because we don't have access to it
-        // The timeout will be managed by the main async function
+        // Send immediate acknowledgment to the new connection
+        const ackData = formatSse("message_injected", {
+          session_id: body.session_id,
+          run_id: activeSession.runId,
+          message: "Message injected into active session",
+        });
+        if (!res.writableEnded) {
+          res.write(ackData);
+        }
       } catch (error) {
         res.status(400).json({
           detail: error instanceof Error ? error.message : String(error)
@@ -734,6 +739,8 @@ export function createApp(): express.Express {
         return;
       }
 
+      // Don't return here - the connection is now part of the active session
+      // and will receive SSE events from the broadcastEvent function
       return;
     }
 
@@ -796,9 +803,10 @@ export function createApp(): express.Express {
       systemPrompt,
     };
 
-    // Register active session - use a temporary key first if no session_id yet
-    const tempKey = body.session_id || runId;
-    activeSessions.set(tempKey, newActiveSession);
+    // Register active session - use session_id as key for message injection lookup
+    // If no session_id yet (new session), use runId as temporary key
+    const sessionKey = body.session_id || runId;
+    activeSessions.set(sessionKey, newActiveSession);
     activeClaudeRuns.set(runId, abortController);
 
     // Clean up when connections close
@@ -884,9 +892,9 @@ export function createApp(): express.Express {
               sessionId = message.session_id;
               newActiveSession.sessionId = sessionId;
 
-              // Update session registration with real session ID
-              if (tempKey !== sessionId) {
-                activeSessions.delete(tempKey);
+              // Update session registration with real session ID for future message injection
+              if (sessionKey !== sessionId) {
+                activeSessions.delete(sessionKey);
                 activeSessions.set(sessionId, newActiveSession);
               }
 
@@ -944,7 +952,9 @@ export function createApp(): express.Express {
               sessionId = message.session_id;
               newActiveSession.sessionId = sessionId;
 
-              if (sessionId) {
+              // Update session registration if needed
+              if (sessionKey !== sessionId) {
+                activeSessions.delete(sessionKey);
                 activeSessions.set(sessionId, newActiveSession);
               }
 
@@ -989,7 +999,9 @@ export function createApp(): express.Express {
             if (!sessionId && payloadSessionId) {
               sessionId = payloadSessionId;
               newActiveSession.sessionId = sessionId;
-              if (sessionId) {
+              // Update session registration if needed
+              if (sessionKey !== sessionId) {
+                activeSessions.delete(sessionKey);
                 activeSessions.set(sessionId, newActiveSession);
               }
             }
@@ -1041,11 +1053,14 @@ export function createApp(): express.Express {
         }
         streamController.end();
 
-        // Clean up
+        // Clean up - delete from both maps
         activeClaudeRuns.delete(runId);
-        activeSessions.delete(tempKey);
-        if (sessionId && sessionId !== tempKey) {
+        // Delete by session_id if available, otherwise by sessionKey (which could be runId)
+        if (sessionId) {
           activeSessions.delete(sessionId);
+        }
+        if (sessionKey !== sessionId) {
+          activeSessions.delete(sessionKey);
         }
 
         // Close all connections

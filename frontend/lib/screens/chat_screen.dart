@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -20,6 +21,7 @@ import '../repositories/api_codex_repository.dart';
 import '../repositories/session_repository.dart';
 import '../services/session_settings_service.dart';
 import '../services/app_settings_service.dart';
+import '../services/speech_to_text_service.dart';
 import 'session_settings_screen.dart';
 import 'codex_session_settings_screen.dart';
 
@@ -74,6 +76,11 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
   // 消息分页加载相关
   List<Message> _allMessages = []; // 所有消息（后端返回的完整列表）
   static const int _initialMessageCount = 100; // 初始加载的消息数量
+
+  // 语音输入相关（仅桌面平台）
+  SpeechToTextService? _speechService;
+  bool _isVoiceListening = false; // 是否正在语音输入
+  bool _voiceSupported = false; // 平台是否支持语音输入
   static const int _loadMoreCount = 50; // 每次加载更多的数量
   bool _hasMoreMessages = false; // 是否有更多历史消息
   bool _isLoadingMore = false; // 是否正在加载更多
@@ -139,6 +146,79 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
 
     // 监听全局设置变化（用于刷新 UI，例如 renderMarkdown 开关）
     AppSettingsService().addListener(_onSettingsChanged);
+
+    // 初始化语音输入服务（仅桌面平台）
+    _initVoiceInput();
+  }
+
+  /// 初始化语音输入服务
+  Future<void> _initVoiceInput() async {
+    // Web 平台不支持语音输入
+    if (kIsWeb) return;
+
+    _speechService = SpeechToTextService.getInstance();
+    _voiceSupported = _speechService!.isPlatformSupported;
+
+    if (_voiceSupported) {
+      // 设置回调
+      _speechService!.onResult = _onVoiceResult;
+      _speechService!.onError = _onVoiceError;
+      _speechService!.onListeningStarted = () {
+        if (mounted) {
+          setState(() => _isVoiceListening = true);
+        }
+      };
+      _speechService!.onListeningStopped = () {
+        if (mounted) {
+          setState(() => _isVoiceListening = false);
+        }
+      };
+
+      // 预初始化（不阻塞 UI）
+      _speechService!.initialize().then((success) {
+        print('DEBUG ChatScreen: Voice input initialized: $success');
+      });
+    }
+  }
+
+  /// 语音识别结果回调
+  void _onVoiceResult(String text, bool isFinal) {
+    if (!mounted) return;
+
+    // 将识别的文字追加到输入框
+    if (text.isNotEmpty) {
+      final currentText = _textController.text;
+      final newText = currentText.isEmpty ? text : '$currentText $text';
+      _textController.text = newText;
+      _textController.selection = TextSelection.fromPosition(
+        TextPosition(offset: newText.length),
+      );
+    }
+  }
+
+  /// 语音识别错误回调
+  void _onVoiceError(String error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// 切换语音输入
+  Future<void> _toggleVoiceInput() async {
+    if (_speechService == null) return;
+
+    if (_isVoiceListening) {
+      await _speechService!.stopListening();
+    } else {
+      // 请求焦点到输入框
+      _inputFocusNode.requestFocus();
+      await _speechService!.startListening();
+    }
   }
 
   void _onSettingsChanged() {
@@ -1959,6 +2039,29 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // 语音输入按钮（支持 Windows/macOS/Android/iOS）
+                  if (_voiceSupported) ...[
+                    Material(
+                      color: _isVoiceListening ? Colors.red : appColors.claudeBubble,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        onTap: _toggleVoiceInput,
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            _isVoiceListening ? Icons.mic : Icons.mic_none,
+                            color: _isVoiceListening
+                                ? Colors.white
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   // 图片选择按钮（仅 Claude Code 模式显示）
                   if (widget.repository is! ApiCodexRepository) ...[
                     Material(
@@ -2043,6 +2146,9 @@ class _ChatScreenState extends State<ChatScreen> with AutomaticKeepAliveClientMi
                                 : TextInputAction.newline, // 桌面端支持 Shift+Enter 换行
                             enabled: true,
                             enableInteractiveSelection: true,
+                            enableIMEPersonalizedLearning: true, // 启用 IME 个性化学习，改善 Windows 语音输入兼容性
+                            autocorrect: true, // 启用自动更正
+                            enableSuggestions: true, // 启用输入建议
                             onSubmitted: Platform.isAndroid || Platform.isIOS
                                 ? (text) {
                                     // 移动端：键盘发送按钮

@@ -291,9 +291,13 @@ class BackendProcessService {
       return;
     }
 
-    // 如果 _backendPid 为 null，尝试通过端口查找 PID
-    if (_backendPid == null) {
-      print('DEBUG BackendProcessService: PID not recorded, trying to find by port $_currentPort');
+    try {
+      print('DEBUG BackendProcessService: Stopping backend on port $_currentPort...');
+
+      // 关键修复：始终通过端口查找真实的后端进程 PID
+      // 因为使用 detached 模式启动的进程会脱离父进程，启动时的 PID 已无效
+      int? actualBackendPid;
+
       try {
         if (Platform.isWindows) {
           final result = await Process.run('powershell', [
@@ -302,70 +306,99 @@ class BackendProcessService {
           ]);
           final output = result.stdout.toString().trim();
           if (output.isNotEmpty) {
-            _backendPid = int.tryParse(output.split('\n').first.trim());
-            print('DEBUG BackendProcessService: Found backend PID: $_backendPid');
+            actualBackendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Found actual backend PID by port: $actualBackendPid');
           }
         } else {
           final result = await Process.run('lsof', ['-ti', ':$_currentPort']);
           final output = result.stdout.toString().trim();
           if (output.isNotEmpty) {
-            _backendPid = int.tryParse(output.split('\n').first.trim());
-            print('DEBUG BackendProcessService: Found backend PID: $_backendPid');
+            actualBackendPid = int.tryParse(output.split('\n').first.trim());
+            print('DEBUG BackendProcessService: Found actual backend PID by port: $actualBackendPid');
           }
         }
       } catch (e) {
-        print('WARN BackendProcessService: Failed to find backend PID: $e');
+        print('WARN BackendProcessService: Failed to find backend PID by port: $e');
       }
 
-      // 如果还是找不到 PID，放弃关闭
-      if (_backendPid == null) {
-        print('WARN BackendProcessService: Cannot find backend PID, skipping shutdown');
+      // 如果通过端口找不到 PID，说明后端可能已经停止
+      if (actualBackendPid == null) {
+        print('WARN BackendProcessService: No backend found on port $_currentPort, assuming already stopped');
         _isBackendRunning = false;
         _backendProcess = null;
+        _backendPid = null;
         return;
       }
-    }
 
-    try {
-      print('DEBUG BackendProcessService: Stopping backend with PID $_backendPid...');
+      print('DEBUG BackendProcessService: Stopping actual backend process $actualBackendPid...');
 
       if (Platform.isWindows) {
-        // Windows: 关闭后端进程（node.exe 或 npm）
-        print('DEBUG BackendProcessService: Killing backend process $_backendPid');
-        final killResult = await Process.run('taskkill', ['/F', '/T', '/PID', '$_backendPid']);
+        // Windows: 关闭后端进程及其所有子进程
+        print('DEBUG BackendProcessService: Killing backend process $actualBackendPid and children');
+
+        // 方法1: 使用 taskkill /F /T 终止进程树
+        final killResult = await Process.run('taskkill', ['/F', '/T', '/PID', '$actualBackendPid']);
         print('DEBUG BackendProcessService: taskkill stdout: ${killResult.stdout}');
         if (killResult.stderr.toString().isNotEmpty) {
           print('DEBUG BackendProcessService: taskkill stderr: ${killResult.stderr}');
         }
         print('DEBUG BackendProcessService: taskkill exit code: ${killResult.exitCode}');
 
-        // 等待一小段时间确保进程完全关闭
-        await Future.delayed(const Duration(milliseconds: 300));
+        // 等待进程完全关闭
+        await Future.delayed(const Duration(milliseconds: 800));
 
-        // 验证进程是否已关闭
-        final checkResult = await Process.run('tasklist', ['/FI', 'PID eq $_backendPid']);
-        final isStillRunning = checkResult.stdout.toString().contains('$_backendPid');
+        // 方法2: 额外检查并杀掉所有可能残留的 node.exe 子进程
+        try {
+          // 获取该进程的所有子进程
+          final childProcessesResult = await Process.run('wmic', [
+            'process', 'where',
+            "(ParentProcessId=$actualBackendPid and Name='node.exe')",
+            'get', 'ProcessId'
+          ]);
+          final childProcessesOutput = childProcessesResult.stdout.toString().trim();
+
+          if (childProcessesOutput.isNotEmpty && !childProcessesOutput.contains('No Instance')) {
+            final lines = childProcessesOutput.split('\n').skip(1).toList(); // 跳过标题行
+            for (final line in lines) {
+              final childPid = int.tryParse(line.trim());
+              if (childPid != null && childPid > 0) {
+                print('DEBUG BackendProcessService: Killing child node process $childPid');
+                await Process.run('taskkill', ['/F', '/PID', '$childPid']);
+                await Future.delayed(const Duration(milliseconds: 100));
+              }
+            }
+          }
+        } catch (e) {
+          print('DEBUG BackendProcessService: Failed to kill child processes: $e');
+        }
+
+        // 验证主进程是否已关闭
+        final checkResult = await Process.run('tasklist', ['/FI', 'PID eq $actualBackendPid']);
+        final isStillRunning = checkResult.stdout.toString().contains('$actualBackendPid');
         if (isStillRunning) {
-          print('WARN BackendProcessService: Process $_backendPid still running after taskkill');
+          print('WARN BackendProcessService: Process $actualBackendPid still running after taskkill, trying again');
+          // 再次强制终止
+          await Process.run('taskkill', ['/F', '/T', '/PID', '$actualBackendPid']);
+          await Future.delayed(const Duration(milliseconds: 500));
         } else {
-          print('DEBUG BackendProcessService: Process $_backendPid confirmed stopped');
+          print('DEBUG BackendProcessService: Process $actualBackendPid confirmed stopped');
         }
       } else {
         // macOS/Linux: 使用 kill 命令
-        print('DEBUG BackendProcessService: Killing backend process $_backendPid');
+        print('DEBUG BackendProcessService: Killing backend process $actualBackendPid');
         // 先尝试 SIGTERM (graceful shutdown)
-        await Process.run('kill', ['$_backendPid']);
+        await Process.run('kill', ['$actualBackendPid']);
 
         // 等待 500ms
         await Future.delayed(const Duration(milliseconds: 500));
 
         // 检查是否还在运行，如果是则强制 SIGKILL
-        final checkResult = await Process.run('ps', ['-p', '$_backendPid']);
+        final checkResult = await Process.run('ps', ['-p', '$actualBackendPid']);
         if (checkResult.exitCode == 0) {
           print('DEBUG BackendProcessService: Process still running, sending SIGKILL');
-          await Process.run('kill', ['-9', '$_backendPid']);
+          await Process.run('kill', ['-9', '$actualBackendPid']);
         } else {
-          print('DEBUG BackendProcessService: Process $_backendPid confirmed stopped');
+          print('DEBUG BackendProcessService: Process $actualBackendPid confirmed stopped');
         }
       }
 

@@ -688,7 +688,7 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     _rebuildTabController(_tabs.length - 1);
   }
 
-  // 处理标签的消息完成通知
+  // 处理标签的消息完成通知（左侧面板）
   void _handleMessageComplete(int tabIndex) {
     print('DEBUG: _handleMessageComplete called, tabIndex=$tabIndex, currentIndex=$_currentIndex');
 
@@ -706,35 +706,21 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     soundService.setVolume(settingsService.notificationVolume);
     soundService.playNotificationSound();
 
+    // 获取标签标题用于显示
+    final title = tabIndex < _tabs.length ? _tabs[tabIndex].title : '对话';
+    final displayTitle = title.length > 15 ? '${title.substring(0, 15)}...' : title;
+
+    // 分屏模式下的面板标识
+    final panelLabel = _isSplitScreen ? '左侧' : '';
+
     // 如果是当前标签页，显示简短的 SnackBar 提示
     if (tabIndex == _currentIndex && tabIndex < _tabs.length) {
       print('DEBUG: Showing completion notification for current tab');
-      if (context.mounted) {
-        final primaryColor = Theme.of(context).colorScheme.primary;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                const Text('消息已完成'),
-              ],
-            ),
-            backgroundColor: primaryColor,
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              bottom: MediaQuery.of(context).size.height - 100,
-              left: 16,
-              right: 16,
-            ),
-          ),
-        );
-      }
+      _showCompletionSnackBar(displayTitle, panelLabel, isLeft: true);
       return;
     }
 
-    // 后台标签页的通知（保持原有逻辑）
+    // 后台标签页的通知
     if (tabIndex != _currentIndex && tabIndex < _tabs.length) {
       print('DEBUG: Showing notification for background tab');
       setState(() {
@@ -742,66 +728,129 @@ class _TabManagerScreenState extends State<TabManagerScreen>
         _tabs[tabIndex].hasNewReplyNotifier.value = true;
       });
 
-      // 显示通知界面
-      if (context.mounted) {
-        final primaryColor = Theme.of(context).colorScheme.primary;
-        // 显示顶部MaterialBanner通知（比SnackBar更显眼）
-        // 限制标题长度，避免过长遮挡界面
-        final title = _tabs[tabIndex].title;
-        final displayTitle = title.length > 20 ? '${title.substring(0, 20)}...' : title;
-        ScaffoldMessenger.of(context).showMaterialBanner(
-          MaterialBanner(
-            backgroundColor: primaryColor.withOpacity(0.95),
-            content: Row(
-              children: [
-                const Icon(Icons.chat, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    '$displayTitle 有新回复',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-                  _tabController.animateTo(tabIndex);
-                },
-                child: const Text(
-                  '查看',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-                },
-                child: const Text(
-                  '关闭',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-        );
+      // 显示紧凑的 SnackBar 通知（替代 MaterialBanner，避免遮挡）
+      _showBackgroundTabSnackBar(
+        displayTitle,
+        panelLabel,
+        isLeft: true,
+        onView: () => _tabController.animateTo(tabIndex),
+      );
+    }
+  }
 
-        // 3秒后自动隐藏
-        Future.delayed(const Duration(seconds: 3), () {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-          }
-        });
+  /// 显示消息完成的 SnackBar（当前标签页）
+  void _showCompletionSnackBar(String title, String panelLabel, {required bool isLeft}) {
+    if (!context.mounted) return;
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // 分屏模式下，SnackBar 显示在对应面板的位置
+    double leftMargin = 16;
+    double rightMargin = 16;
+
+    if (_isSplitScreen) {
+      final panelWidth = isLeft ? screenWidth * _splitRatio : screenWidth * (1 - _splitRatio);
+      if (isLeft) {
+        rightMargin = screenWidth - panelWidth + 16;
+      } else {
+        leftMargin = screenWidth * _splitRatio + 16;
       }
     }
+
+    final message = _isSplitScreen
+        ? '$panelLabel「$title」已完成'
+        : '「$title」已完成';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: primaryColor,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 100,
+          left: leftMargin,
+          right: rightMargin,
+        ),
+      ),
+    );
+  }
+
+  /// 显示后台标签页的 SnackBar 通知
+  void _showBackgroundTabSnackBar(
+    String title,
+    String panelLabel,
+    {required bool isLeft, required VoidCallback onView}
+  ) {
+    if (!context.mounted) return;
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // 分屏模式下，SnackBar 显示在对应面板的位置
+    double leftMargin = 16;
+    double rightMargin = 16;
+
+    if (_isSplitScreen) {
+      final panelWidth = isLeft ? screenWidth * _splitRatio : screenWidth * (1 - _splitRatio);
+      if (isLeft) {
+        rightMargin = screenWidth - panelWidth + 16;
+      } else {
+        leftMargin = screenWidth * _splitRatio + 16;
+      }
+    }
+
+    final message = _isSplitScreen
+        ? '$panelLabel「$title」有新回复'
+        : '「$title」有新回复';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.chat, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: primaryColor.withOpacity(0.95),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 100,
+          left: leftMargin,
+          right: rightMargin,
+        ),
+        action: SnackBarAction(
+          label: '查看',
+          textColor: Colors.white,
+          onPressed: onView,
+        ),
+      ),
+    );
   }
 
   void _rebuildTabController(int initialIndex) {
@@ -1236,29 +1285,15 @@ class _TabManagerScreenState extends State<TabManagerScreen>
     soundService.setVolume(settingsService.notificationVolume);
     soundService.playNotificationSound();
 
+    // 获取标签标题用于显示
+    final title = tabIndex < _rightTabs.length ? _rightTabs[tabIndex].title : '对话';
+    final displayTitle = title.length > 15 ? '${title.substring(0, 15)}...' : title;
+
+    // 右侧面板标识
+    const panelLabel = '右侧';
+
     if (tabIndex == _rightCurrentIndex && tabIndex < _rightTabs.length) {
-      if (context.mounted) {
-        final primaryColor = Theme.of(context).colorScheme.primary;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                const Text('消息已完成'),
-              ],
-            ),
-            backgroundColor: primaryColor,
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              bottom: MediaQuery.of(context).size.height - 100,
-              left: 16,
-              right: 16,
-            ),
-          ),
-        );
-      }
+      _showCompletionSnackBar(displayTitle, panelLabel, isLeft: false);
       return;
     }
 
@@ -1268,62 +1303,12 @@ class _TabManagerScreenState extends State<TabManagerScreen>
         _rightTabs[tabIndex].hasNewReplyNotifier.value = true;
       });
 
-      if (context.mounted) {
-        final primaryColor = Theme.of(context).colorScheme.primary;
-        // 限制标题长度，避免过长遮挡界面
-        final title = _rightTabs[tabIndex].title;
-        final displayTitle = title.length > 20 ? '${title.substring(0, 20)}...' : title;
-        ScaffoldMessenger.of(context).showMaterialBanner(
-          MaterialBanner(
-            backgroundColor: primaryColor.withOpacity(0.95),
-            content: Row(
-              children: [
-                const Icon(Icons.chat, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    '$displayTitle 有新回复',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-                  _rightTabController?.animateTo(tabIndex);
-                },
-                child: const Text(
-                  '查看',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-                },
-                child: const Text(
-                  '关闭',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-        );
-
-        Future.delayed(const Duration(seconds: 3), () {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-          }
-        });
-      }
+      _showBackgroundTabSnackBar(
+        displayTitle,
+        panelLabel,
+        isLeft: false,
+        onView: () => _rightTabController?.animateTo(tabIndex),
+      );
     }
   }
 
